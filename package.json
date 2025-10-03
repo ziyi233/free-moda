@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-free-moda",
-  "description": "使用免费魔搭api",
-  "version": "0.0.1",
+  "description": "使用 ModelScope 免费 API 进行图片生成和编辑，支持多个 API Key 轮询",
+  "version": "0.0.6",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -9,14 +9,17 @@
     "dist"
   ],
   "license": "MIT",
-  "scripts": {},
+  "author": "ziyi233",
   "keywords": [
     "chatbot",
     "koishi",
-    "plugin"
+    "plugin",
+    "modelscope",
+    "image-generation",
+    "image-editing",
+    "qwen"
   ],
-  "devDependencies": {},
   "peerDependencies": {
-    "koishi": "4.18.7"
+    "koishi": "^4.0.0"
   }
 }

@@ -1,0 +1,23 @@
+# Koishi 插件配置示例
+# 将此配置添加到你的 koishi.yml 中
+
+plugins:
+  free-moda:
+    # ModelScope API Token（必填）
+    # 获取方式：访问 https://modelscope.cn/ 注册账号后在个人中心获取
+    apiKeys:
+      - 'ms-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'  # 主 key
+      - 'ms-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy'  # 备用 key（可选）
+    
+    # ========== 模型配置 ==========
+    # 图片编辑模型（默认：Qwen/Qwen-Image-Edit）
+    # 可通过 moda.models 命令查看可用模型
+    editModel: 'Qwen/Qwen-Image-Edit'
+    
+    # 图片生成模型（默认：Qwen/Qwen-Image）
+    # 可通过 moda.models 命令查看可用模型
+    generateModel: 'Qwen/Qwen-Image'
+    
+    # ========== 图床配置（可选）==========
+    # 默认使用公共测试 key，建议注册自己的：https://api.imgbb.com/
+    imgbbApiKey: 'd36eb6591370ae7f9089d85875e56b22'
