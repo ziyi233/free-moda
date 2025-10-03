@@ -3,43 +3,79 @@ import { Context, Schema, h } from 'koishi'
 export const name = 'free-moda'
 export const inject = ['database']
 
+interface ModelConfig {
+  name: string
+  alias: string
+  description?: string
+  register?: boolean
+}
+
 export interface Config {
   apiKeys: string[]
-  editModel: string
+  editModels: ModelConfig[]
   editMaxRetries: number
   editRetryInterval: number
-  generateModel: string
+  generateModels: ModelConfig[]
   generateMaxRetries: number
   generateRetryInterval: number
   enableLogs: boolean
 }
 
-export const Config: Schema<Config> = Schema.object({
-  apiKeys: Schema.array(String)
-    .description('ModelScope API Token 列表\n\n获取方式：访问 https://modelscope.cn/my/myaccesstoken\n\n注意要绑定阿里云账号')
-    .required(),
-  editModel: Schema.string()
-    .description('图片编辑模型')
-    .default('Qwen/Qwen-Image-Edit'),
-  editMaxRetries: Schema.number()
-    .description('编辑最大重试次数 (编辑很慢，建议 120+)')
-    .default(120),
-  editRetryInterval: Schema.number()
-    .description('编辑查询间隔(毫秒)')
-    .default(10000),
-  generateModel: Schema.string()
-    .description('图片生成模型')
-    .default('Qwen/Qwen-Image'),
-  generateMaxRetries: Schema.number()
-    .description('生成最大重试次数')
-    .default(60),
-  generateRetryInterval: Schema.number()
-    .description('生成查询间隔(毫秒)')
-    .default(5000),
-  enableLogs: Schema.boolean()
-    .description('启用控制台日志')
-    .default(true),
-})
+export const Config: Schema<Config> = Schema.intersect([
+  Schema.object({
+    apiKeys: Schema.array(String)
+      .description('ModelScope API Token 列表\n\n获取方式：访问 https://modelscope.cn/my/myaccesstoken\n\n注意要绑定阿里云账号')
+      .required(),
+  }).description('基础配置'),
+
+  Schema.object({
+    editModels: Schema.array(Schema.object({
+      name: Schema.string().required().description('模型名称'),
+      alias: Schema.string().required().description('别名'),
+      description: Schema.string().description('描述'),
+      register: Schema.boolean().description('注册指令').default(true),
+    }))
+      .role('table')
+      .description('图片编辑模型列表（第一个为默认）')
+      .default([
+        { name: 'Qwen/Qwen-Image-Edit', alias: 'edit', description: '通用图片编辑模型', register: true },
+      ]),
+    editMaxRetries: Schema.number()
+      .description('编辑最大重试次数 (编辑很慢，建议 120+)')
+      .default(120),
+    editRetryInterval: Schema.number()
+      .description('编辑查询间隔(毫秒)')
+      .default(10000),
+  }).description('图片编辑配置'),
+
+  Schema.object({
+    generateModels: Schema.array(Schema.object({
+      name: Schema.string().required().description('模型名称'),
+      alias: Schema.string().required().description('别名'),
+      description: Schema.string().description('描述'),
+      register: Schema.boolean().description('注册指令').default(true),
+    }))
+      .role('table')
+      .description('图片生成模型列表（第一个为默认）')
+      .default([
+        { name: 'Qwen/Qwen-Image', alias: 'qwen', description: '通用文生图模型', register: true },
+        { name: 'merjic/majicbeauty-qwen1', alias: 'beauty', description: '冷淡风美人', register: true },
+        { name: 'animationtj/Qwen_image_nude_pantyhose_lora', alias: 'pantyhose', description: '肉色连裤袜特化', register: true },
+      ]),
+    generateMaxRetries: Schema.number()
+      .description('生成最大重试次数')
+      .default(60),
+    generateRetryInterval: Schema.number()
+      .description('生成查询间隔(毫秒)')
+      .default(5000),
+  }).description('图片生成配置'),
+
+  Schema.object({
+    enableLogs: Schema.boolean()
+      .description('启用控制台日志')
+      .default(true),
+  }).description('调试选项'),
+])
 
 interface UserTask {
   id: number
@@ -230,83 +266,120 @@ export function apply(ctx: Context, config: Config) {
     throw new Error('任务超时')
   }
 
-  ctx.command('moda.edit <prompt:text>', '编辑图片')
-    .alias('图片编辑')
-    .usage('引用包含图片的消息后使用此命令')
-    .example('[引用消息] moda.edit 把头发变成蓝色')
-    .action(async ({ session }, prompt) => {
-      if (!prompt) return '请提供编辑提示词，例如：把头发变成蓝色'
+  // 帮助命令
+  ctx.command('moda', '魔搭图片生成与编辑')
+    .action(async () => {
+      let help = '=== 魔搭图片生成与编辑 ===\n\n'
       
-      // 清理 prompt，移除图片标签
-      prompt = prompt.replace(/<img[^>]*>/g, '').trim()
-      if (!prompt) return '请提供编辑提示词'
-      
-      if (config.enableLogs) logger.info(`用户 ${session.userId} 请求编辑图片: ${prompt}`)
-      
-      // 优先从引用消息中获取图片
-      let images = session.quote ? h.select(session.quote.elements, 'img') : []
-      
-      // 如果没有引用，尝试从当前消息获取
-      if (!images.length) {
-        images = h.select(session.elements, 'img')
+      // 文生图指令
+      help += '[ 文生图指令 ]\n'
+      for (const [index, model] of config.generateModels.entries()) {
+        const mark = index === 0 ? '*' : ' '
+        const cmd = model.register ? `moda.${model.alias}` : '-'
+        help += `${mark} ${cmd}`
+        if (model.description) {
+          help += ` (${model.description})`
+        }
+        help += '\n'
       }
+      help += '\n'
       
-      if (!images.length) {
-        if (config.enableLogs) logger.warn(`用户 ${session.userId} 未提供图片`)
-        return '⚠️ 未找到图片。\n\n使用方式：引用包含图片的消息后发送：moda.edit 你的提示词'
+      // 图片编辑指令
+      help += '[ 图片编辑指令 ]\n'
+      for (const [index, model] of config.editModels.entries()) {
+        const mark = index === 0 ? '*' : ' '
+        const cmd = model.register ? `moda.${model.alias}` : '-'
+        help += `${mark} ${cmd}`
+        if (model.description) {
+          help += ` (${model.description})`
+        }
+        help += '\n'
       }
+      help += '\n'
       
-      try {
-        const imageUrl = images[0].attrs.src
-        if (config.enableLogs) logger.info(`图片 URL: ${imageUrl.substring(0, 50)}...`)
-        
-        await session.send('⚙️ 正在调用魔搭 API 编辑图片...')
-        const { taskId, apiKey } = await createTask(imageUrl, prompt, config.editModel)
-        
-        logger.info(`准备创建任务记录 - UserID: ${session.userId}, TaskID: ${taskId}`)
-        // 记录用户任务
-        await addUserTask(session.userId, taskId, apiKey, 'edit', prompt)
-        logger.info('任务记录创建完成')
-        
-        await session.send(`⏳ 任务已创建\n⚠️ 图片编辑通常需要 10分钟往上，请耐心等待...\n💡 使用 moda.tasks 可查看任务状态`)
-        const url = await waitTask(taskId, apiKey, config.editMaxRetries, config.editRetryInterval)
-        
-        if (config.enableLogs) logger.success(`图片编辑完成，返回给用户 ${session.userId}`)
-        return h.image(url)
-      } catch (e) {
-        if (config.enableLogs) logger.error(`图片编辑失败: ${e.message}`)
-        return `❌ 处理失败: ${e.message}`
-      }
+      // 任务管理指令
+      help += '[ 任务管理指令 ]\n'
+      help += '  moda.tasks\n'
+      help += '  moda.check <号>\n'
+      help += '\n* 表示默认模型\n'
+      
+      return help
     })
 
-  ctx.command('moda.gen <prompt:text>', '生成图片')
-    .alias('生成图片')
-    .usage('根据文字描述生成图片')
-    .example('moda.gen 一只可爱的紫色猫咪')
-    .action(async ({ session }, prompt) => {
-      if (!prompt) return '请提供图片描述，例如：一只可爱的猫咪'
-      
-      if (config.enableLogs) logger.info(`用户 ${session.userId} 请求生成图片: ${prompt}`)
-      
-      try {
-        await session.send('🎨 正在生成图片...')
-        const { taskId, apiKey } = await createTask('', prompt, config.generateModel)
+  // 为编辑模型注册别名子指令
+  for (const model of config.editModels) {
+    if (!model.register) continue
+    
+    const cmdDesc = model.description || `使用 ${model.name} 编辑图片`
+    ctx.command(`moda.${model.alias} <prompt:text>`, cmdDesc)
+      .usage('引用包含图片的消息后使用此命令')
+      .action(async ({ session }, prompt) => {
+        if (!prompt) return '请提供编辑提示词'
         
-        logger.info(`准备创建任务记录 - UserID: ${session.userId}, TaskID: ${taskId}`)
-        // 记录用户任务
-        await addUserTask(session.userId, taskId, apiKey, 'generate', prompt)
-        logger.info('任务记录创建完成')
+        // 清理 prompt
+        prompt = prompt.replace(/<img[^>]*>/g, '').trim()
+        if (!prompt) return '请提供编辑提示词'
         
-        await session.send(`⏳ 任务已创建，预计 10-30 秒...\n💡 使用 moda.tasks 可查看任务状态`)
-        const url = await waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
+        // 获取图片
+        let images = session.quote ? h.select(session.quote.elements, 'img') : []
+        if (!images.length) {
+          images = h.select(session.elements, 'img')
+        }
+        if (!images.length) {
+          return '⚠️ 未找到图片。\n\n使用方式：引用包含图片的消息后发送命令'
+        }
         
-        if (config.enableLogs) logger.success(`图片生成完成，返回给用户 ${session.userId}`)
-        return h.image(url)
-      } catch (e) {
-        if (config.enableLogs) logger.error(`图片生成失败: ${e.message}`)
-        return `❌ 生成失败: ${e.message}`
-      }
-    })
+        try {
+          const imageUrl = images[0].attrs.src
+          if (config.enableLogs) logger.info(`用户 ${session.userId} 使用 ${model.alias} 编辑图片: ${prompt}`)
+          
+          await session.send(`⚙️ 正在使用 ${model.alias} 编辑图片...`)
+          const { taskId, apiKey } = await createTask(imageUrl, prompt, model.name)
+          
+          await addUserTask(session.userId, taskId, apiKey, 'edit', prompt)
+          
+          await session.send(`⏳ 任务已创建\n⚠️ 图片编辑通常需要 10分钟往上，请耐心等待...\n💡 使用 moda.tasks 可查看任务状态`)
+          const url = await waitTask(taskId, apiKey, config.editMaxRetries, config.editRetryInterval)
+          
+          if (config.enableLogs) logger.success(`图片编辑完成`)
+          return h.image(url)
+        } catch (e) {
+          if (config.enableLogs) logger.error(`图片编辑失败: ${e.message}`)
+          return `❌ 编辑失败: ${e.message}`
+        }
+      })
+  }
+
+  // 为生成模型注册别名子指令
+  for (const model of config.generateModels) {
+    if (!model.register) continue  // 跳过未启用注册的模型
+    
+    const cmdDesc = model.description || `使用 ${model.name} 生成图片`
+    ctx.command(`moda.${model.alias} <prompt:text>`, cmdDesc)
+      .action(async ({ session }, prompt) => {
+        if (!prompt) return `请提供图片描述`
+        
+        if (config.enableLogs) logger.info(`用户 ${session.userId} 使用 ${model.alias} 生成图片: ${prompt}`)
+        
+        try {
+          await session.send(`🎨 正在使用 ${model.alias} 生成图片...`)
+          const { taskId, apiKey } = await createTask('', prompt, model.name)
+          
+          logger.info(`准备创建任务记录 - UserID: ${session.userId}, TaskID: ${taskId}`)
+          await addUserTask(session.userId, taskId, apiKey, 'generate', prompt)
+          logger.info('任务记录创建完成')
+          
+          await session.send(`⏳ 任务已创建，预计 10-30 秒...\n💡 使用 moda.tasks 可查看任务状态`)
+          const url = await waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
+          
+          if (config.enableLogs) logger.success(`图片生成完成，返回给用户 ${session.userId}`)
+          return h.image(url)
+        } catch (e) {
+          if (config.enableLogs) logger.error(`图片生成失败: ${e.message}`)
+          return `❌ 生成失败: ${e.message}`
+        }
+      })
+  }
   
   // 格式化时间
   function formatTime(seconds: number): string {
