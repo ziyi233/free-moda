@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-free-moda",
-  "description": "使用 ModelScope 免费 API 进行图片生成和编辑，支持多个 API Key 轮询",
-  "version": "0.0.8",
+  "description": "使用 ModelScope 免费 API 进行图片生成和编辑，支持 API Key 轮询、AI 生成提示词、自动识别分辨率",
+  "version": "0.0.19",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -20,6 +20,25 @@
     "qwen"
   ],
   "peerDependencies": {
-    "koishi": "^4.0.0"
+    "koishi": "^4.15.6",
+    "koishi-plugin-chatluna": "^1.0.0-beta.119"
+  },
+  "peerDependenciesMeta": {
+    "koishi-plugin-chatluna": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "koishi-plugin-chatluna": "^1.0.0-beta.119"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.2"
+  },
+  "koishi": {
+    "service": {
+      "optional": [
+        "chatluna"
+      ]
+    }
   }
 }
