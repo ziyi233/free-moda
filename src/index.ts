@@ -34,18 +34,21 @@ export interface Config {
   enableAI: boolean
   aiModel?: string
   aiPromptTemplate?: string
-  autoRecall: boolean
-  recallDelay: number
-  recallProgress: boolean
-  recallResult: boolean
-  // 输出消息模板
+  // 输出消息配置
   msgEditStart: string
+  recallEditStart: boolean
   msgEditCreated: string
+  recallEditCreated: boolean
   msgGenerateStart: string
+  recallGenerateStart: boolean
   msgGenerateCreated: string
+  recallGenerateCreated: boolean
   msgAiAnalyzing: string
+  recallAiAnalyzing: boolean
   msgAiResult: string
+  recallAiResult: boolean
   msgTaskCreated: string
+  recallTaskCreated: boolean
   msgTaskWaiting: string
   enableLogs: boolean
 }
@@ -149,56 +152,60 @@ export const Config: Schema<Config> = Schema.intersect([
   }).description('AI 功能'),
 
   Schema.object({
-    autoRecall: Schema.boolean()
-      .description('启用自动撤回')
-      .default(false),
-    recallDelay: Schema.number()
-      .description('撤回延迟（毫秒）')
-      .min(0)
-      .max(60000)
-      .default(3000),
-    recallProgress: Schema.boolean()
-      .description('撤回进度消息（如"正在生成..."）')
-      .default(true),
-    recallResult: Schema.boolean()
-      .description('撤回中间结果（如"任务已创建"）')
-      .default(false),
-  }).description('消息撤回'),
-
-  Schema.object({
     msgEditStart: Schema.string()
       .description('编辑开始 - 变量: {model}, {size}')
       .default('⚙️ 正在使用 {model} 编辑图片...{size}')
       .role('textarea', { rows: [2, 4] }),
+    recallEditStart: Schema.boolean()
+      .description('↑ 自动撤回')
+      .default(true),
     msgEditCreated: Schema.string()
       .description('编辑任务已创建')
       .default('⏳ 任务已创建，预计 30-120 秒...\n💡 使用 moda.tasks 可查看任务状态')
       .role('textarea', { rows: [2, 4] }),
+    recallEditCreated: Schema.boolean()
+      .description('↑ 自动撤回')
+      .default(false),
     msgGenerateStart: Schema.string()
       .description('生成开始 - 变量: {model}, {size}')
       .default('🎨 正在使用 {model} 生成图片...{size}')
       .role('textarea', { rows: [2, 4] }),
+    recallGenerateStart: Schema.boolean()
+      .description('↑ 自动撤回')
+      .default(true),
     msgGenerateCreated: Schema.string()
       .description('生成任务已创建')
       .default('⏳ 任务已创建，预计 10-30 秒...\n💡 使用 moda.tasks 可查看任务状态')
       .role('textarea', { rows: [2, 4] }),
+    recallGenerateCreated: Schema.boolean()
+      .description('↑ 自动撤回')
+      .default(false),
     msgAiAnalyzing: Schema.string()
       .description('AI 分析中')
       .default('🤖 AI 正在分析并生成提示词...')
       .role('textarea', { rows: [2, 4] }),
+    recallAiAnalyzing: Schema.boolean()
+      .description('↑ 自动撤回')
+      .default(true),
     msgAiResult: Schema.string()
       .description('AI 结果 - 变量: {prompt}, {model}, {reason}')
       .default('✨ AI 已生成提示词！\n\n📝 提示词: {prompt}\n🎨 模型: {model}\n💡 理由: {reason}\n\n开始生成图片...')
       .role('textarea', { rows: [4, 8] }),
+    recallAiResult: Schema.boolean()
+      .description('↑ 自动撤回')
+      .default(false),
     msgTaskCreated: Schema.string()
       .description('AI 任务已创建')
       .default('⏳ 任务已创建，预计 10-30 秒...')
       .role('textarea', { rows: [2, 4] }),
+    recallTaskCreated: Schema.boolean()
+      .description('↑ 自动撤回')
+      .default(false),
     msgTaskWaiting: Schema.string()
       .description('任务查询提示')
       .default('💡 使用 moda.tasks 可查看任务状态')
       .role('textarea', { rows: [2, 4] }),
-  }).description('输出消息模板').collapse(),
+  }).description('输出消息').collapse(),
 
   Schema.object({
     enableLogs: Schema.boolean()
@@ -240,9 +247,9 @@ export function apply(ctx: Context, config: Config) {
   }
 
   // 消息撤回辅助函数
-  async function sendWithRecall(session: any, content: string, type: 'progress' | 'result' | 'final' | 'error', previousMsgIds: string[] = []): Promise<string[]> {
-    // 如果启用了自动撤回，先撤回之前的消息
-    if (config.autoRecall && previousMsgIds.length > 0) {
+  async function sendWithRecall(session: any, content: string, shouldRecall: boolean, previousMsgIds: string[] = []): Promise<string[]> {
+    // 先撤回之前的消息
+    if (previousMsgIds.length > 0) {
       for (const msgId of previousMsgIds) {
         try {
           await session.bot.deleteMessage(session.channelId, msgId)
@@ -256,12 +263,7 @@ export function apply(ctx: Context, config: Config) {
     // 发送新消息
     const msgIds = await session.send(content)
     
-    // 根据类型和配置决定是否需要撤回
-    const shouldRecall = config.autoRecall && (
-      (type === 'progress' && config.recallProgress) ||
-      (type === 'result' && config.recallResult)
-    )
-    
+    // 如果需要撤回，返回消息ID
     if (shouldRecall) {
       return msgIds
     }
@@ -622,20 +624,20 @@ export function apply(ctx: Context, config: Config) {
             model: model.alias,
             size: size ? ` (${size})` : ''
           })
-          toRecall = await sendWithRecall(session, startMsg, 'progress', toRecall)
+          toRecall = await sendWithRecall(session, startMsg, config.recallEditStart, toRecall)
           
           const { taskId, apiKey } = await createTask(imageUrl, prompt, model.name, size)
           await addUserTask(session.userId, taskId, apiKey, 'edit', prompt)
           
           // 中间结果：任务已创建
-          toRecall = await sendWithRecall(session, config.msgEditCreated, 'result', toRecall)
+          toRecall = await sendWithRecall(session, config.msgEditCreated, config.recallEditCreated, toRecall)
           
           const url = await waitTask(taskId, apiKey, config.editMaxRetries, config.editRetryInterval)
           
           if (config.enableLogs) logger.success(`图片编辑完成`)
           
           // 最终结果：图片（先撤回之前的消息，再发送图片）
-          if (config.autoRecall && toRecall.length > 0) {
+          if (toRecall.length > 0) {
             for (const msgId of toRecall) {
               try {
                 await session.bot.deleteMessage(session.channelId, msgId)
@@ -674,7 +676,7 @@ export function apply(ctx: Context, config: Config) {
             model: model.alias,
             size: size ? ` (${size})` : ''
           })
-          toRecall = await sendWithRecall(session, startMsg, 'progress', toRecall)
+          toRecall = await sendWithRecall(session, startMsg, config.recallGenerateStart, toRecall)
           
           const { taskId, apiKey } = await createTask('', prompt, model.name, size)
           
@@ -683,14 +685,14 @@ export function apply(ctx: Context, config: Config) {
           logger.info('任务记录创建完成')
           
           // 中间结果：任务已创建
-          toRecall = await sendWithRecall(session, config.msgGenerateCreated, 'result', toRecall)
+          toRecall = await sendWithRecall(session, config.msgGenerateCreated, config.recallGenerateCreated, toRecall)
           
           const url = await waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
           
           if (config.enableLogs) logger.success(`图片生成完成，返回给用户 ${session.userId}`)
           
           // 最终结果：图片（先撤回之前的消息）
-          if (config.autoRecall && toRecall.length > 0) {
+          if (toRecall.length > 0) {
             for (const msgId of toRecall) {
               try {
                 await session.bot.deleteMessage(session.channelId, msgId)
@@ -836,7 +838,7 @@ export function apply(ctx: Context, config: Config) {
           let toRecall: string[] = []
           
           // 进度消息：AI 分析中
-          toRecall = await sendWithRecall(session, config.msgAiAnalyzing, 'progress', toRecall)
+          toRecall = await sendWithRecall(session, config.msgAiAnalyzing, config.recallAiAnalyzing, toRecall)
           
           // 解析模型名称
           const [platform, modelName] = config.aiModel.split('/')
@@ -893,7 +895,7 @@ export function apply(ctx: Context, config: Config) {
             model: `${selectedModel.alias} (${selectedModel.description})`,
             reason: reason
           })
-          toRecall = await sendWithRecall(session, aiResultMsg, 'result', toRecall)
+          toRecall = await sendWithRecall(session, aiResultMsg, config.recallAiResult, toRecall)
           
           // 生成图片
           const size = selectedModel.defaultSize || config.defaultSize
@@ -902,14 +904,14 @@ export function apply(ctx: Context, config: Config) {
           
           // 中间结果：任务创建
           const taskMsg = `${config.msgTaskCreated}\n${config.msgTaskWaiting}`
-          toRecall = await sendWithRecall(session, taskMsg, 'result', toRecall)
+          toRecall = await sendWithRecall(session, taskMsg, config.recallTaskCreated, toRecall)
           
           const url = await waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
           
           if (config.enableLogs) logger.success(`AI 生成图片完成`)
           
           // 最终结果：图片（先撤回之前的消息）
-          if (config.autoRecall && toRecall.length > 0) {
+          if (toRecall.length > 0) {
             for (const msgId of toRecall) {
               try {
                 await session.bot.deleteMessage(session.channelId, msgId)
