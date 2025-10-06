@@ -31,6 +31,8 @@ export interface Config {
   generateMaxRetries: number
   generateRetryInterval: number
   defaultSize: string
+  enableNegativePrompt: boolean
+  negativePrompt: string
   enableAI: boolean
   aiModel?: string
   aiPromptTemplate?: string
@@ -124,6 +126,13 @@ export const Config: Schema<Config> = Schema.intersect([
     defaultSize: Schema.string()
       .description('默认分辨率（格式: 1024x1024）')
       .default('1024x1024'),
+    enableNegativePrompt: Schema.boolean()
+      .description('启用负向提示词')
+      .default(false),
+    negativePrompt: Schema.string()
+      .description('负向提示词（最大 2000 字符）')
+      .role('textarea', { rows: [3, 6] })
+      .default('lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry'),
   }).description('图片生成'),
 
   Schema.object({
@@ -135,20 +144,109 @@ export const Config: Schema<Config> = Schema.intersect([
     aiPromptTemplate: Schema.string()
       .role('textarea', { rows: [3, 10] })
       .description('提示词模板 - 变量: {description}, {modelList}')
-      .default(`你是一个专业的图片生成提示词专家。用户会给你一个简单的描述，你需要：
-1. 将描述扩展为详细的、适合图片生成的提示词（英文）
-2. 根据描述内容，从以下模型中选择最合适的一个：
+      .default(`Your task is to transform a simple user description into a high-quality, detailed, and expressive English prompt suitable for AI image generation, while also selecting the most appropriate model from the provided list.
 
-{modelList}
+Follow these rules carefully:
 
-请以 JSON 格式回复：
+You are a Prompt optimizer designed to rewrite user inputs into high-quality Prompts that are more complete and expressive while preserving the original meaning.
+
+Task Requirements:
+
+For overly brief user inputs, reasonably infer and add details to enhance the visual completeness without altering the core meaning.
+
+Refine descriptions of subject characteristics, visual style, spatial relationships, lighting, and shot composition.
+
+If the image should include text, enclose that text in English quotation marks and specify its position (e.g., top-left corner, bottom-right corner) and style (e.g., handwritten font). Do not translate the text content.
+
+Match the rewritten prompt to a precise and niche style that aligns with the user’s intent. If the style is unspecified, choose the most appropriate one (e.g., realistic photography, digital illustration, anime, concept art, etc.).
+
+The rewritten prompt must be under 200 English words.
+
+Avoid any explicit, violent, political, or illegal content.
+
+Output Format (must be JSON):
 {
-  "prompt": "优化后的详细提示词（英文）",
-  "model": "选择的模型别名",
-  "reason": "选择该模型的理由（中文）"
+"prompt": "Optimized detailed prompt (in English)",
+"model": "Chosen model alias",
+"reason": "Brief reason for choosing this model (in Chinese)"
 }
 
-用户描述：{description}`),
+Model selection:
+Choose the most suitable model from the following list:
+{modelList}
+
+User input description:
+{description}
+
+Example output:
+{
+"prompt": "A Chinese girl standing under a paper umbrella in gentle evening rain, wearing traditional hanfu with soft flowing sleeves. Wet stone pavement reflects the warm glow of lanterns, mist rising in the background, cinematic lighting, delicate facial expression, detailed texture of silk fabric, photorealistic 8K rendering, inspired by classic wuxia film tone.",
+"model": "realistic-photography-v6",
+"reason": "该模型在光影写实和人物细节方面表现最佳，适合写实雨景场景。"
+}
+
+Rewritten Prompt Examples for style reference:
+
+Dunhuang mural art style: Chinese animated illustration, masterwork. A radiant nine-colored deer with pure white antlers, slender neck and legs, vibrant energy, adorned with colorful ornaments. Divine flying apsaras aura, ethereal grace, elegant form. Golden mountainous landscape background with modern color palettes, auspicious symbolism. Delicate details, Chinese cloud patterns, gradient hues, mysterious and dreamlike. Highlight the nine-colored deer as the focal point, no human figures, premium illustration quality, ultra-detailed CG, 32K resolution, C4D rendering.
+
+Art poster design: Handwritten calligraphy title "Art Design" in dissolving particle font, small signature "QwenImage", secondary text "Alibaba". Chinese ink wash painting style with watercolor, blow-paint art, emotional narrative. A boy and dog stand back-to-camera on grassland, with rising smoke and distant mountains. Double exposure + montage blur effects, textured matte finish, hazy atmosphere, rough brush strokes, gritty particles, glass texture, pointillism, mineral pigments, diffused dreaminess, minimalist composition with ample negative space.
+
+Black-haired Chinese adult male, portrait above the collar. A black cat's head blocks half of the man's side profile, sharing equal composition. Shallow green jungle background. Graffiti style, clean minimalism, thick strokes. Muted yet bright tones, fairy tale illustration style, outlined lines, large color blocks, rough edges, flat design, retro hand-drawn aesthetics, Jules Verne-inspired contrast, emphasized linework, graphic design.
+
+Fashion photo of four young models showing phone lanyards. Diverse poses: two facing camera smiling, two side-view conversing. Casual light-colored outfits contrast with vibrant lanyards. Minimalist white/grey background. Focus on upper bodies highlighting lanyard details.
+
+Dynamic lion stone sculpture mid-pounce with front legs airborne and hind legs pushing off. Smooth lines and defined muscles show power. Faded ancient courtyard background with trees and stone steps. Weathered surface gives antique look. Documentary photography style with fine details.Your task is to transform a simple user description into a high-quality, detailed, and expressive English prompt suitable for AI image generation, while also selecting the most appropriate model from the provided list.
+
+Follow these rules carefully:
+
+You are a Prompt optimizer designed to rewrite user inputs into high-quality Prompts that are more complete and expressive while preserving the original meaning.
+
+Task Requirements:
+
+For overly brief user inputs, reasonably infer and add details to enhance the visual completeness without altering the core meaning.
+
+Refine descriptions of subject characteristics, visual style, spatial relationships, lighting, and shot composition.
+
+If the image should include text, enclose that text in English quotation marks and specify its position (e.g., top-left corner, bottom-right corner) and style (e.g., handwritten font). Do not translate the text content.
+
+Match the rewritten prompt to a precise and niche style that aligns with the user’s intent. If the style is unspecified, choose the most appropriate one (e.g., realistic photography, digital illustration, anime, concept art, etc.).
+
+The rewritten prompt must be under 200 English words.
+
+Avoid any explicit, violent, political, or illegal content.
+
+Output Format (must be JSON):
+{
+"prompt": "Optimized detailed prompt (in English)",
+"model": "Chosen model alias",
+"reason": "Brief reason for choosing this model (in Chinese)"
+}
+
+Model selection:
+Choose the most suitable model from the following list:
+{modelList}
+
+User input description:
+{description}
+
+Example output:
+{
+"prompt": "A Chinese girl standing under a paper umbrella in gentle evening rain, wearing traditional hanfu with soft flowing sleeves. Wet stone pavement reflects the warm glow of lanterns, mist rising in the background, cinematic lighting, delicate facial expression, detailed texture of silk fabric, photorealistic 8K rendering, inspired by classic wuxia film tone.",
+"model": "realistic-photography-v6",
+"reason": "该模型在光影写实和人物细节方面表现最佳，适合写实雨景场景。"
+}
+
+Rewritten Prompt Examples for style reference:
+
+Dunhuang mural art style: Chinese animated illustration, masterwork. A radiant nine-colored deer with pure white antlers, slender neck and legs, vibrant energy, adorned with colorful ornaments. Divine flying apsaras aura, ethereal grace, elegant form. Golden mountainous landscape background with modern color palettes, auspicious symbolism. Delicate details, Chinese cloud patterns, gradient hues, mysterious and dreamlike. Highlight the nine-colored deer as the focal point, no human figures, premium illustration quality, ultra-detailed CG, 32K resolution, C4D rendering.
+
+Art poster design: Handwritten calligraphy title "Art Design" in dissolving particle font, small signature "QwenImage", secondary text "Alibaba". Chinese ink wash painting style with watercolor, blow-paint art, emotional narrative. A boy and dog stand back-to-camera on grassland, with rising smoke and distant mountains. Double exposure + montage blur effects, textured matte finish, hazy atmosphere, rough brush strokes, gritty particles, glass texture, pointillism, mineral pigments, diffused dreaminess, minimalist composition with ample negative space.
+
+Black-haired Chinese adult male, portrait above the collar. A black cat's head blocks half of the man's side profile, sharing equal composition. Shallow green jungle background. Graffiti style, clean minimalism, thick strokes. Muted yet bright tones, fairy tale illustration style, outlined lines, large color blocks, rough edges, flat design, retro hand-drawn aesthetics, Jules Verne-inspired contrast, emphasized linework, graphic design.
+
+Fashion photo of four young models showing phone lanyards. Diverse poses: two facing camera smiling, two side-view conversing. Casual light-colored outfits contrast with vibrant lanyards. Minimalist white/grey background. Focus on upper bodies highlighting lanyard details.
+
+Dynamic lion stone sculpture mid-pounce with front legs airborne and hind legs pushing off. Smooth lines and defined muscles show power. Faded ancient courtyard background with trees and stone steps. Weathered surface gives antique look. Documentary photography style with fine details.`),
   }).description('AI 功能'),
 
   Schema.object({
@@ -398,7 +496,7 @@ export function apply(ctx: Context, config: Config) {
   }
 
   // 创建任务，返回 taskId 和使用的 apiKey
-  async function createTask(imageUrl: string, prompt: string, model: string, size?: string): Promise<{ taskId: string, apiKey: string }> {
+  async function createTask(imageUrl: string, prompt: string, model: string, size?: string, negativePrompt?: string): Promise<{ taskId: string, apiKey: string }> {
     if (config.enableLogs) logger.info(`创建任务 - 模型: ${model}, 提示词: ${prompt}, 分辨率: ${size || '默认'}`)
     
     // 尝试所有可用的 API Key
@@ -412,6 +510,9 @@ export function apply(ctx: Context, config: Config) {
         const requestBody: any = { model, prompt, image_url: imageUrl }
         if (size) {
           requestBody.size = size
+        }
+        if (negativePrompt) {
+          requestBody.negative_prompt = negativePrompt
         }
         
         const response = await ctx.http.post(
@@ -678,7 +779,9 @@ export function apply(ctx: Context, config: Config) {
           })
           toRecall = await sendWithRecall(session, startMsg, config.recallGenerateStart, toRecall)
           
-          const { taskId, apiKey } = await createTask('', prompt, model.name, size)
+          // 传递负向提示词（如果启用）
+          const negPrompt = config.enableNegativePrompt ? config.negativePrompt : undefined
+          const { taskId, apiKey } = await createTask('', prompt, model.name, size, negPrompt)
           
           logger.info(`准备创建任务记录 - UserID: ${session.userId}, TaskID: ${taskId}`)
           await addUserTask(session.userId, taskId, apiKey, 'generate', prompt)
@@ -899,7 +1002,9 @@ export function apply(ctx: Context, config: Config) {
           
           // 生成图片
           const size = selectedModel.defaultSize || config.defaultSize
-          const { taskId, apiKey } = await createTask('', prompt, selectedModel.name, size)
+          // 传递负向提示词（如果启用）
+          const negPrompt = config.enableNegativePrompt ? config.negativePrompt : undefined
+          const { taskId, apiKey } = await createTask('', prompt, selectedModel.name, size, negPrompt)
           await addUserTask(session.userId, taskId, apiKey, 'generate', prompt)
           
           // 中间结果：任务创建

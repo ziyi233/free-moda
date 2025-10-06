@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-free-moda",
   "description": "使用 ModelScope 免费 API 进行图片生成和编辑，支持 API Key 轮询、AI 生成提示词、自动识别分辨率",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
