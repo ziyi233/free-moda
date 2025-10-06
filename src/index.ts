@@ -1,8 +1,15 @@
-import { Context, Schema, h } from 'koishi'
+import { Context, h, Schema } from 'koishi'
 import type {} from 'koishi-plugin-chatluna/services/chat'
 import type { PlatformService } from 'koishi-plugin-chatluna/llm-core/platform/service'
 import { ModelType } from 'koishi-plugin-chatluna/llm-core/platform/types'
 import { getMessageContent } from 'koishi-plugin-chatluna/utils/string'
+
+// 导入模块
+import { Config } from './config'
+import './types'  // 导入类型声明（扩展 Tables）
+import { createUtils } from './utils'
+import { createAPI } from './api'
+import { createDatabase } from './database'
 
 export const name = 'free-moda'
 export const inject = {
@@ -10,959 +17,545 @@ export const inject = {
   optional: ['chatluna'],
 }
 
-interface ModelConfig {
-  name: string
-  alias: string
-  description?: string
-  register?: boolean
-  defaultSize?: string
-}
-
-export interface Config {
-  apiKeys: string[]
-  editModels: ModelConfig[]
-  editMaxRetries: number
-  editRetryInterval: number
-  autoDetectSize: boolean
-  scaleMode: 'original' | 'fit'
-  maxWidth: number
-  maxHeight: number
-  generateModels: ModelConfig[]
-  generateMaxRetries: number
-  generateRetryInterval: number
-  defaultSize: string
-  enableNegativePrompt: boolean
-  negativePrompt: string
-  enableAI: boolean
-  aiModel?: string
-  aiPromptTemplate?: string
-  // 输出消息配置
-  msgEditStart: string
-  recallEditStart: boolean
-  msgEditCreated: string
-  recallEditCreated: boolean
-  msgGenerateStart: string
-  recallGenerateStart: boolean
-  msgGenerateCreated: string
-  recallGenerateCreated: boolean
-  msgAiAnalyzing: string
-  recallAiAnalyzing: boolean
-  msgAiResult: string
-  recallAiResult: boolean
-  msgTaskCreated: string
-  recallTaskCreated: boolean
-  msgTaskWaiting: string
-  enableLogs: boolean
-}
-
-export const Config: Schema<Config> = Schema.intersect([
-  Schema.object({
-    apiKeys: Schema.array(String)
-      .description('API Token 列表 - 访问 https://modelscope.cn/my/myaccesstoken 获取（需绑定阿里云账号）')
-      .required(),
-  }).description('基础配置'),
-
-  Schema.object({
-    editModels: Schema.array(Schema.object({
-      name: Schema.string().required().description('模型名称'),
-      alias: Schema.string().required().description('别名'),
-      description: Schema.string().description('描述'),
-      register: Schema.boolean().description('注册指令').default(true),
-      defaultSize: Schema.string().description('默认分辨率').default(undefined),
-    }))
-      .role('table')
-      .description('编辑模型列表')
-      .default([
-        { name: 'Qwen/Qwen-Image-Edit', alias: 'edit', description: '通用图片编辑模型', register: true, defaultSize: undefined },
-      ]),
-    editMaxRetries: Schema.number()
-      .description('最大重试次数（编辑较慢，建议 120+）')
-      .default(120),
-    editRetryInterval: Schema.number()
-      .description('查询间隔（毫秒）')
-      .default(10000),
-    autoDetectSize: Schema.boolean()
-      .description('自动识别原图分辨率（除非手动指定 -s）')
-      .default(true),
-    scaleMode: Schema.union([
-      Schema.const('original' as const).description('原始分辨率'),
-      Schema.const('fit' as const).description('等比缩放'),
-    ])
-      .description('分辨率处理模式')
-      .default('fit'),
-    maxWidth: Schema.number()
-      .description('最大宽度（等比缩放时生效）')
-      .min(64)
-      .max(2048)
-      .default(1664),
-    maxHeight: Schema.number()
-      .description('最大高度（等比缩放时生效）')
-      .min(64)
-      .max(2048)
-      .default(1664),
-  }).description('图片编辑'),
-
-  Schema.object({
-    generateModels: Schema.array(Schema.object({
-      name: Schema.string().required().description('模型名称'),
-      alias: Schema.string().required().description('别名'),
-      description: Schema.string().description('描述'),
-      register: Schema.boolean().description('注册指令').default(true),
-      defaultSize: Schema.string().description('默认分辨率').default(undefined),
-    }))
-      .role('table')
-      .description('生成模型列表')
-      .default([
-        { name: 'Qwen/Qwen-Image', alias: 'qwen', description: '通用文生图模型', register: true, defaultSize: undefined },
-        { name: 'merjic/majicbeauty-qwen1', alias: 'beauty', description: '冷淡风美人', register: true, defaultSize: undefined },
-        { name: 'animationtj/Qwen_image_nude_pantyhose_lora', alias: 'pantyhose', description: '肉色连裤袜特化', register: true, defaultSize: undefined },
-      ]),
-    generateMaxRetries: Schema.number()
-      .description('最大重试次数')
-      .default(60),
-    generateRetryInterval: Schema.number()
-      .description('查询间隔（毫秒）')
-      .default(5000),
-    defaultSize: Schema.string()
-      .description('默认分辨率（格式: 1024x1024）')
-      .default('1024x1024'),
-    enableNegativePrompt: Schema.boolean()
-      .description('启用负向提示词')
-      .default(false),
-    negativePrompt: Schema.string()
-      .description('负向提示词（最大 2000 字符）')
-      .role('textarea', { rows: [3, 6] })
-      .default('lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry'),
-  }).description('图片生成'),
-
-  Schema.object({
-    enableAI: Schema.boolean()
-      .description('启用 AI 提示词生成（需安装 ChatLuna）')
-      .default(false),
-    aiModel: Schema.dynamic('model')
-      .description('AI 模型'),
-    aiPromptTemplate: Schema.string()
-      .role('textarea', { rows: [3, 10] })
-      .description('提示词模板 - 变量: {description}, {modelList}')
-      .default(`Your task is to transform a simple user description into a high-quality, detailed, and expressive English prompt suitable for AI image generation, while also selecting the most appropriate model from the provided list.
-
-Follow these rules carefully:
-
-You are a Prompt optimizer designed to rewrite user inputs into high-quality Prompts that are more complete and expressive while preserving the original meaning.
-
-Task Requirements:
-
-For overly brief user inputs, reasonably infer and add details to enhance the visual completeness without altering the core meaning.
-
-Refine descriptions of subject characteristics, visual style, spatial relationships, lighting, and shot composition.
-
-If the image should include text, enclose that text in English quotation marks and specify its position (e.g., top-left corner, bottom-right corner) and style (e.g., handwritten font). Do not translate the text content.
-
-Match the rewritten prompt to a precise and niche style that aligns with the user’s intent. If the style is unspecified, choose the most appropriate one (e.g., realistic photography, digital illustration, anime, concept art, etc.).
-
-The rewritten prompt must be under 200 English words.
-
-Avoid any explicit, violent, political, or illegal content.
-
-Output Format (must be JSON):
-{
-"prompt": "Optimized detailed prompt (in English)",
-"model": "Chosen model alias",
-"reason": "Brief reason for choosing this model (in Chinese)"
-}
-
-Model selection:
-Choose the most suitable model from the following list:
-{modelList}
-
-User input description:
-{description}
-
-Example output:
-{
-"prompt": "A Chinese girl standing under a paper umbrella in gentle evening rain, wearing traditional hanfu with soft flowing sleeves. Wet stone pavement reflects the warm glow of lanterns, mist rising in the background, cinematic lighting, delicate facial expression, detailed texture of silk fabric, photorealistic 8K rendering, inspired by classic wuxia film tone.",
-"model": "realistic-photography-v6",
-"reason": "该模型在光影写实和人物细节方面表现最佳，适合写实雨景场景。"
-}
-
-Rewritten Prompt Examples for style reference:
-
-Dunhuang mural art style: Chinese animated illustration, masterwork. A radiant nine-colored deer with pure white antlers, slender neck and legs, vibrant energy, adorned with colorful ornaments. Divine flying apsaras aura, ethereal grace, elegant form. Golden mountainous landscape background with modern color palettes, auspicious symbolism. Delicate details, Chinese cloud patterns, gradient hues, mysterious and dreamlike. Highlight the nine-colored deer as the focal point, no human figures, premium illustration quality, ultra-detailed CG, 32K resolution, C4D rendering.
-
-Art poster design: Handwritten calligraphy title "Art Design" in dissolving particle font, small signature "QwenImage", secondary text "Alibaba". Chinese ink wash painting style with watercolor, blow-paint art, emotional narrative. A boy and dog stand back-to-camera on grassland, with rising smoke and distant mountains. Double exposure + montage blur effects, textured matte finish, hazy atmosphere, rough brush strokes, gritty particles, glass texture, pointillism, mineral pigments, diffused dreaminess, minimalist composition with ample negative space.
-
-Black-haired Chinese adult male, portrait above the collar. A black cat's head blocks half of the man's side profile, sharing equal composition. Shallow green jungle background. Graffiti style, clean minimalism, thick strokes. Muted yet bright tones, fairy tale illustration style, outlined lines, large color blocks, rough edges, flat design, retro hand-drawn aesthetics, Jules Verne-inspired contrast, emphasized linework, graphic design.
-
-Fashion photo of four young models showing phone lanyards. Diverse poses: two facing camera smiling, two side-view conversing. Casual light-colored outfits contrast with vibrant lanyards. Minimalist white/grey background. Focus on upper bodies highlighting lanyard details.
-
-Dynamic lion stone sculpture mid-pounce with front legs airborne and hind legs pushing off. Smooth lines and defined muscles show power. Faded ancient courtyard background with trees and stone steps. Weathered surface gives antique look. Documentary photography style with fine details.Your task is to transform a simple user description into a high-quality, detailed, and expressive English prompt suitable for AI image generation, while also selecting the most appropriate model from the provided list.
-
-Follow these rules carefully:
-
-You are a Prompt optimizer designed to rewrite user inputs into high-quality Prompts that are more complete and expressive while preserving the original meaning.
-
-Task Requirements:
-
-For overly brief user inputs, reasonably infer and add details to enhance the visual completeness without altering the core meaning.
-
-Refine descriptions of subject characteristics, visual style, spatial relationships, lighting, and shot composition.
-
-If the image should include text, enclose that text in English quotation marks and specify its position (e.g., top-left corner, bottom-right corner) and style (e.g., handwritten font). Do not translate the text content.
-
-Match the rewritten prompt to a precise and niche style that aligns with the user’s intent. If the style is unspecified, choose the most appropriate one (e.g., realistic photography, digital illustration, anime, concept art, etc.).
-
-The rewritten prompt must be under 200 English words.
-
-Avoid any explicit, violent, political, or illegal content.
-
-Output Format (must be JSON):
-{
-"prompt": "Optimized detailed prompt (in English)",
-"model": "Chosen model alias",
-"reason": "Brief reason for choosing this model (in Chinese)"
-}
-
-Model selection:
-Choose the most suitable model from the following list:
-{modelList}
-
-User input description:
-{description}
-
-Example output:
-{
-"prompt": "A Chinese girl standing under a paper umbrella in gentle evening rain, wearing traditional hanfu with soft flowing sleeves. Wet stone pavement reflects the warm glow of lanterns, mist rising in the background, cinematic lighting, delicate facial expression, detailed texture of silk fabric, photorealistic 8K rendering, inspired by classic wuxia film tone.",
-"model": "realistic-photography-v6",
-"reason": "该模型在光影写实和人物细节方面表现最佳，适合写实雨景场景。"
-}
-
-Rewritten Prompt Examples for style reference:
-
-Dunhuang mural art style: Chinese animated illustration, masterwork. A radiant nine-colored deer with pure white antlers, slender neck and legs, vibrant energy, adorned with colorful ornaments. Divine flying apsaras aura, ethereal grace, elegant form. Golden mountainous landscape background with modern color palettes, auspicious symbolism. Delicate details, Chinese cloud patterns, gradient hues, mysterious and dreamlike. Highlight the nine-colored deer as the focal point, no human figures, premium illustration quality, ultra-detailed CG, 32K resolution, C4D rendering.
-
-Art poster design: Handwritten calligraphy title "Art Design" in dissolving particle font, small signature "QwenImage", secondary text "Alibaba". Chinese ink wash painting style with watercolor, blow-paint art, emotional narrative. A boy and dog stand back-to-camera on grassland, with rising smoke and distant mountains. Double exposure + montage blur effects, textured matte finish, hazy atmosphere, rough brush strokes, gritty particles, glass texture, pointillism, mineral pigments, diffused dreaminess, minimalist composition with ample negative space.
-
-Black-haired Chinese adult male, portrait above the collar. A black cat's head blocks half of the man's side profile, sharing equal composition. Shallow green jungle background. Graffiti style, clean minimalism, thick strokes. Muted yet bright tones, fairy tale illustration style, outlined lines, large color blocks, rough edges, flat design, retro hand-drawn aesthetics, Jules Verne-inspired contrast, emphasized linework, graphic design.
-
-Fashion photo of four young models showing phone lanyards. Diverse poses: two facing camera smiling, two side-view conversing. Casual light-colored outfits contrast with vibrant lanyards. Minimalist white/grey background. Focus on upper bodies highlighting lanyard details.
-
-Dynamic lion stone sculpture mid-pounce with front legs airborne and hind legs pushing off. Smooth lines and defined muscles show power. Faded ancient courtyard background with trees and stone steps. Weathered surface gives antique look. Documentary photography style with fine details.`),
-  }).description('AI 功能'),
-
-  Schema.object({
-    msgEditStart: Schema.string()
-      .description('编辑开始 - 变量: {model}, {size}')
-      .default('⚙️ 正在使用 {model} 编辑图片...{size}')
-      .role('textarea', { rows: [2, 4] }),
-    recallEditStart: Schema.boolean()
-      .description('↑ 自动撤回')
-      .default(true),
-    msgEditCreated: Schema.string()
-      .description('编辑任务已创建')
-      .default('⏳ 任务已创建，预计 30-120 秒...\n💡 使用 moda.tasks 可查看任务状态')
-      .role('textarea', { rows: [2, 4] }),
-    recallEditCreated: Schema.boolean()
-      .description('↑ 自动撤回')
-      .default(false),
-    msgGenerateStart: Schema.string()
-      .description('生成开始 - 变量: {model}, {size}')
-      .default('🎨 正在使用 {model} 生成图片...{size}')
-      .role('textarea', { rows: [2, 4] }),
-    recallGenerateStart: Schema.boolean()
-      .description('↑ 自动撤回')
-      .default(true),
-    msgGenerateCreated: Schema.string()
-      .description('生成任务已创建')
-      .default('⏳ 任务已创建，预计 10-30 秒...\n💡 使用 moda.tasks 可查看任务状态')
-      .role('textarea', { rows: [2, 4] }),
-    recallGenerateCreated: Schema.boolean()
-      .description('↑ 自动撤回')
-      .default(false),
-    msgAiAnalyzing: Schema.string()
-      .description('AI 分析中')
-      .default('🤖 AI 正在分析并生成提示词...')
-      .role('textarea', { rows: [2, 4] }),
-    recallAiAnalyzing: Schema.boolean()
-      .description('↑ 自动撤回')
-      .default(true),
-    msgAiResult: Schema.string()
-      .description('AI 结果 - 变量: {prompt}, {model}, {reason}')
-      .default('✨ AI 已生成提示词！\n\n📝 提示词: {prompt}\n🎨 模型: {model}\n💡 理由: {reason}\n\n开始生成图片...')
-      .role('textarea', { rows: [4, 8] }),
-    recallAiResult: Schema.boolean()
-      .description('↑ 自动撤回')
-      .default(false),
-    msgTaskCreated: Schema.string()
-      .description('AI 任务已创建')
-      .default('⏳ 任务已创建，预计 10-30 秒...')
-      .role('textarea', { rows: [2, 4] }),
-    recallTaskCreated: Schema.boolean()
-      .description('↑ 自动撤回')
-      .default(false),
-    msgTaskWaiting: Schema.string()
-      .description('任务查询提示')
-      .default('💡 使用 moda.tasks 可查看任务状态')
-      .role('textarea', { rows: [2, 4] }),
-  }).description('输出消息').collapse(),
-
-  Schema.object({
-    enableLogs: Schema.boolean()
-      .description('启用控制台日志')
-      .default(true),
-  }).description('调试选项'),
-])
-
-interface UserTask {
-  id: number
-  taskId: string
-  apiKey: string
-  type: 'edit' | 'generate'
-  prompt: string
-  startTime: number
-  endTime?: number
-  status: string
-  imageUrl?: string
-  userId: string
-}
-
-declare module 'koishi' {
-  interface Tables {
-    moda_tasks: UserTask
-  }
-}
+export { Config }
 
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger('free-moda')
-  const baseUrl = 'https://api-inference.modelscope.cn/'
   
-  // 消息模板变量替换
-  function formatMessage(template: string, vars: Record<string, string>): string {
-    let result = template
-    for (const [key, value] of Object.entries(vars)) {
-      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value || '')
-    }
-    return result
-  }
-
-  // 消息撤回辅助函数
-  async function sendWithRecall(session: any, content: string, shouldRecall: boolean, previousMsgIds: string[] = []): Promise<string[]> {
-    // 先撤回之前的消息
-    if (previousMsgIds.length > 0) {
-      for (const msgId of previousMsgIds) {
-        try {
-          await session.bot.deleteMessage(session.channelId, msgId)
-        } catch (e) {
-          // 撤回失败不影响流程
-          if (config.enableLogs) logger.warn(`撤回消息失败: ${e.message}`)
-        }
-      }
-    }
-    
-    // 发送新消息
-    const msgIds = await session.send(content)
-    
-    // 如果需要撤回，返回消息ID
-    if (shouldRecall) {
-      return msgIds
-    }
-    
-    return []
-  }
+  // 初始化模块
+  const utils = createUtils(ctx, config, logger)
+  const api = createAPI(ctx, config, logger)
+  const db = createDatabase(ctx, logger)
   
   // 扩展数据库表
+  // 任务表
   ctx.model.extend('moda_tasks', {
     id: 'unsigned',
     taskId: 'string',
     apiKey: 'string',
     type: 'string',
+    // 请求参数
+    model: 'string',
     prompt: 'text',
-    startTime: 'double',  // 使用 double 存储时间戳
-    endTime: 'double',    // 使用 double 存储时间戳
+    negativePrompt: 'text',
+    size: 'string',
+    seed: 'unsigned',
+    steps: 'unsigned',
+    guidance: 'double',
+    inputImageUrl: 'text',
+    // 响应结果
     status: 'string',
-    imageUrl: 'string',
-    userId: 'string',
+    requestId: 'string',
+    outputImages: 'text',
+    resultSeed: 'unsigned',
+    // 时间
+    createdAt: 'double',
+    completedAt: 'double',
   }, {
     autoInc: true,
     primary: 'id',
   })
-  
-  // API Key 轮询索引
-  let currentKeyIndex = 0
-  
-  // 获取下一个 API Key (轮询)
-  function getNextApiKey(): string {
-    if (!config.apiKeys || config.apiKeys.length === 0) {
-      throw new Error('未配置 ModelScope API Key')
-    }
-    const key = config.apiKeys[currentKeyIndex]
-    const keyIndex = currentKeyIndex + 1
-    currentKeyIndex = (currentKeyIndex + 1) % config.apiKeys.length
-    if (config.enableLogs) {
-      logger.info(`使用 API Key [${keyIndex}/${config.apiKeys.length}]`)
-    }
-    return key
-  }
 
-  // 获取图片分辨率
-  async function getImageSize(imageUrl: string): Promise<string | null> {
+  // 用户任务关联表
+  ctx.model.extend('moda_user_tasks', {
+    id: 'unsigned',
+    userId: 'string',
+    taskId: 'unsigned',
+    createdAt: 'double',
+  }, {
+    autoInc: true,
+    primary: 'id',
+  })
+
+  // 收藏表
+  ctx.model.extend('moda_favorites', {
+    id: 'unsigned',
+    userId: 'string',
+    taskId: 'unsigned',
+    note: 'text',
+    tags: 'text',
+    favoritedAt: 'double',
+  }, {
+    autoInc: true,
+    primary: 'id',
+  })
+
+  // 工具函数
+  const { formatMessage, sendWithRecall, formatTime, formatTask } = utils
+
+  // 图片尺寸相关
+  async function getImageSize(url: string): Promise<string | null> {
     try {
-      if (config.enableLogs) logger.info(`正在获取图片分辨率: ${imageUrl}`)
+      const response = await ctx.http.get(url, { responseType: 'arraybuffer' })
+      const buffer = Buffer.from(response)
       
-      // 下载图片数据
-      const imageBuffer = await ctx.http.get(imageUrl, { responseType: 'arraybuffer' })
-      const buffer = Buffer.from(imageBuffer)
-      
-      // 解析图片尺寸
-      let width: number, height: number
-      
-      // PNG 格式
-      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
-        width = buffer.readUInt32BE(16)
-        height = buffer.readUInt32BE(20)
-      }
-      // JPEG 格式
-      else if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
+      // 简单的 PNG/JPEG 尺寸检测
+      if (buffer[0] === 0x89 && buffer[1] === 0x50) { // PNG
+        const width = buffer.readUInt32BE(16)
+        const height = buffer.readUInt32BE(20)
+        return `${width}x${height}`
+      } else if (buffer[0] === 0xFF && buffer[1] === 0xD8) { // JPEG
         let offset = 2
         while (offset < buffer.length) {
           if (buffer[offset] !== 0xFF) break
           const marker = buffer[offset + 1]
           if (marker === 0xC0 || marker === 0xC2) {
-            height = buffer.readUInt16BE(offset + 5)
-            width = buffer.readUInt16BE(offset + 7)
-            break
+            const height = buffer.readUInt16BE(offset + 5)
+            const width = buffer.readUInt16BE(offset + 7)
+            return `${width}x${height}`
           }
           offset += 2 + buffer.readUInt16BE(offset + 2)
         }
       }
-      // GIF 格式
-      else if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
-        width = buffer.readUInt16LE(6)
-        height = buffer.readUInt16LE(8)
-      }
-      // WebP 格式
-      else if (buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
-        // 简单的 WebP VP8 格式检测
-        if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38) {
-          const code = buffer.readUInt32LE(23)
-          width = (code & 0x3FFF) + 1
-          height = ((code >> 16) & 0x3FFF) + 1
-        }
-      }
-      
-      if (width && height) {
-        const size = `${width}x${height}`
-        if (config.enableLogs) logger.success(`图片分辨率: ${size}`)
-        return size
-      }
-      
-      if (config.enableLogs) logger.warn('无法识别图片格式')
       return null
-    } catch (error) {
-      if (config.enableLogs) logger.error(`获取图片分辨率失败: ${error.message}`)
+    } catch (e) {
+      if (config.enableLogs) logger.warn(`获取图片尺寸失败: ${e.message}`)
       return null
     }
   }
 
-  // 计算缩放后的尺寸
   function calculateScaledSize(originalSize: string): string {
     const [width, height] = originalSize.split('x').map(Number)
     
-    // 如果是原始模式，直接返回
     if (config.scaleMode === 'original') {
-      if (config.enableLogs) logger.info(`使用原始分辨率: ${originalSize}`)
       return originalSize
     }
     
-    // 等比缩放模式：缩放到最大边界
     const maxW = config.maxWidth
     const maxH = config.maxHeight
-    
-    // 计算缩放比例（取较小值以确保不超出边界）
     const scaleW = maxW / width
     const scaleH = maxH / height
     const scale = Math.min(scaleW, scaleH)
     
-    // 计算新尺寸（向下取整到偶数，确保兼容性）
     const newWidth = Math.floor(width * scale / 2) * 2
     const newHeight = Math.floor(height * scale / 2) * 2
     
-    const newSize = `${newWidth}x${newHeight}`
-    if (config.enableLogs) {
-      const action = scale > 1 ? '放大' : scale < 1 ? '缩小' : '保持'
-      logger.info(`等比${action}: ${originalSize} -> ${newSize} (缩放比例: ${(scale * 100).toFixed(1)}%)`)
-    }
-    
-    return newSize
+    return `${newWidth}x${newHeight}`
   }
 
-  // 创建任务，返回 taskId 和使用的 apiKey
-  async function createTask(imageUrl: string, prompt: string, model: string, size?: string, negativePrompt?: string): Promise<{ taskId: string, apiKey: string }> {
-    if (config.enableLogs) logger.info(`创建任务 - 模型: ${model}, 提示词: ${prompt}, 分辨率: ${size || '默认'}`)
-    
-    // 尝试所有可用的 API Key
-    const maxAttempts = config.apiKeys.length
-    let lastError: Error
-    
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const apiKey = getNextApiKey()
-      
-      try {
-        const requestBody: any = { model, prompt, image_url: imageUrl }
-        if (size) {
-          requestBody.size = size
-        }
-        if (negativePrompt) {
-          requestBody.negative_prompt = negativePrompt
-        }
-        
-        const response = await ctx.http.post(
-          `${baseUrl}v1/images/generations`,
-          requestBody,
-          { 
-            headers: { 
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/json',
-              'X-ModelScope-Async-Mode': 'true' 
-            } 
-          }
-        )
-        
-        if (config.enableLogs) logger.success(`任务创建成功: ${response.task_id}`)
-        return { taskId: response.task_id, apiKey }
-      } catch (error) {
-        lastError = error
-        const errorMsg = error.message || String(error)
-        if (config.enableLogs) {
-          logger.warn(`API Key [${attempt + 1}/${maxAttempts}] 失败: ${errorMsg}`)
-        }
-        
-        // 如果是认证错误，给出提示
-        if (errorMsg.includes('Unauthorized') || errorMsg.includes('401')) {
-          if (config.enableLogs) {
-            logger.warn('💡 提示：Unauthorized 错误通常是因为：\n1. Token 已过期\n2. 未绑定阿里云账号（访问 https://modelscope.cn 绑定）\n3. Token 没有权限访问该模型')
-          }
-        }
-        
-        // 如果不是最后一次尝试，继续下一个 key
-        if (attempt < maxAttempts - 1) {
-          continue
-        }
-      }
-    }
-    
-    // 所有 key 都失败了
-    logger.error('所有 API Key 都失败了')
-    
-    // 如果是认证错误，给用户友好的提示
-    if (lastError.message?.includes('Unauthorized') || lastError.message?.includes('401')) {
-      throw new Error('认证失败：请检查 Token 是否有效，并确保已绑定阿里云账号（访问 https://modelscope.cn 绑定）')
-    }
-    
-    throw lastError
-  }
+  // 注册主命令
+  ctx.command('moda', 'ModelScope 图片生成和编辑')
 
-  // 查询任务状态，使用创建任务时的同一个 key
-  async function getStatus(taskId: string, apiKey: string) {
-    return await ctx.http.get(`${baseUrl}v1/tasks/${taskId}`, {
-      headers: { 
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'X-ModelScope-Task-Type': 'image_generation' 
-      }
-    })
-  }
-
-  // 添加用户任务
-  async function addUserTask(userId: string, taskId: string, apiKey: string, type: 'edit' | 'generate', prompt: string) {
-    try {
-      const task = await ctx.database.create('moda_tasks', {
-        taskId,
-        apiKey,
-        type,
-        prompt,
-        startTime: Date.now(),
-        status: 'PENDING',
-        userId,
-      })
-      if (config.enableLogs) logger.success(`任务记录已创建: ID=${task.id}, TaskID=${taskId}`)
-      return task
-    } catch (error) {
-      logger.error('创建任务记录失败:', error)
-      throw error
-    }
-  }
-  
-  // 更新任务状态
-  async function updateTaskStatus(taskId: string, status: string, imageUrl?: string) {
-    // 先获取当前任务状态
-    const [currentTask] = await ctx.database.get('moda_tasks', { taskId })
-    
-    const update: Partial<UserTask> = { status }
-    if (imageUrl) update.imageUrl = imageUrl
-    
-    // 只在状态首次变为完成或失败时记录结束时间
-    if ((status === 'SUCCEED' || status === 'FAILED') && !currentTask?.endTime) {
-      update.endTime = Date.now()
-      if (config.enableLogs) {
-        logger.info(`任务 ${taskId} 完成，记录结束时间`)
-      }
-    }
-    
-    await ctx.database.set('moda_tasks', { taskId }, update)
-  }
-  
-  // 等待任务完成，使用创建任务时的同一个 key
-  async function waitTask(taskId: string, apiKey: string, maxRetries: number, interval: number): Promise<string> {
-    if (config.enableLogs) logger.info(`开始等待任务完成: ${taskId} (最多${maxRetries}次, 间隔${interval}ms)`)
-    for (let i = 0; i < maxRetries; i++) {
-      const result = await getStatus(taskId, apiKey)
-      await updateTaskStatus(taskId, result.task_status)
-      if (config.enableLogs) logger.info(`[${i + 1}/${maxRetries}] 任务状态: ${result.task_status}`)
-      
-      if (result.task_status === 'SUCCEED') {
-        const imageUrl = result.output_images[0]
-        if (config.enableLogs) logger.success(`任务完成: ${imageUrl}`)
-        await updateTaskStatus(taskId, result.task_status, imageUrl)
-        return imageUrl
-      }
-      if (result.task_status === 'FAILED') {
-        if (config.enableLogs) logger.error('任务失败:', result)
-        throw new Error('任务失败')
-      }
-      await new Promise(r => setTimeout(r, interval))
-    }
-    if (config.enableLogs) logger.error(`任务超时: ${taskId}`)
-    throw new Error('任务超时')
-  }
-
-  // 帮助命令
-  ctx.command('moda', '魔搭图片生成与编辑')
-    .action(async () => {
-      let help = '=== 魔搭图片生成与编辑 ===\n\n'
-      
-      // 文生图指令
-      help += '[ 文生图指令 ]\n'
-      for (const [index, model] of config.generateModels.entries()) {
-        const mark = index === 0 ? '*' : ' '
-        const cmd = model.register ? `moda.${model.alias}` : '-'
-        help += `${mark} ${cmd}`
-        if (model.description) {
-          help += ` (${model.description})`
-        }
-        help += '\n'
-      }
-      help += '\n'
-      
-      // 图片编辑指令
-      help += '[ 图片编辑指令 ]\n'
-      for (const [index, model] of config.editModels.entries()) {
-        const mark = index === 0 ? '*' : ' '
-        const cmd = model.register ? `moda.${model.alias}` : '-'
-        help += `${mark} ${cmd}`
-        if (model.description) {
-          help += ` (${model.description})`
-        }
-        help += '\n'
-      }
-      help += '\n'
-      
-      // 任务管理指令
-      help += '[ 任务管理指令 ]\n'
-      help += '  moda.tasks\n'
-      help += '  moda.check <号>\n'
-      help += '\n* 表示默认模型\n'
-      
-      return help
-    })
-
-  // 为编辑模型注册别名子指令
+  // 注册编辑模型命令
   for (const model of config.editModels) {
     if (!model.register) continue
     
     const cmdDesc = model.description || `使用 ${model.name} 编辑图片`
     ctx.command(`moda.${model.alias} <prompt:text>`, cmdDesc)
-      .usage('引用包含图片的消息后使用此命令')
-      .option('size', '-s <size:string> 指定图片分辨率 (如: 1024x1024)')
+      .option('size', '-s <size:string> 指定图片分辨率')
       .action(async ({ session, options }, prompt) => {
-        if (!prompt) return '请提供编辑提示词'
+        if (!prompt) return '请提供编辑指令'
         
-        // 清理 prompt
-        prompt = prompt.replace(/<img[^>]*>/g, '').trim()
-        if (!prompt) return '请提供编辑提示词'
-        
-        // 获取图片
         let images = session.quote ? h.select(session.quote.elements, 'img') : []
-        if (!images.length) {
-          images = h.select(session.elements, 'img')
-        }
-        if (!images.length) {
-          return '⚠️ 未找到图片。\n\n使用方式：引用包含图片的消息后发送命令'
-        }
+        if (!images.length) images = h.select(session.elements, 'img')
+        if (!images.length) return '⚠️ 未找到图片'
         
         try {
           const imageUrl = images[0].attrs.src
-          
-          // 确定使用的分辨率
           let size = options?.size || model.defaultSize
           
-          // 如果启用了自动识别且没有手动指定分辨率，则自动获取原图分辨率
           if (config.autoDetectSize && !options?.size && !model.defaultSize) {
             const detectedSize = await getImageSize(imageUrl)
-            if (detectedSize) {
-              // 根据缩放模式处理分辨率
-              size = calculateScaledSize(detectedSize)
-              if (config.enableLogs) logger.info(`最终使用分辨率: ${size}`)
-            }
+            if (detectedSize) size = calculateScaledSize(detectedSize)
           }
           
-          if (config.enableLogs) logger.info(`用户 ${session.userId} 使用 ${model.alias} 编辑图片: ${prompt}, 分辨率: ${size || '默认'}`)
-          
-          // 使用消息撤回功能
           let toRecall: string[] = []
           
-          // 进度消息：正在编辑
           const startMsg = formatMessage(config.msgEditStart, {
             model: model.alias,
             size: size ? ` (${size})` : ''
           })
           toRecall = await sendWithRecall(session, startMsg, config.recallEditStart, toRecall)
           
-          const { taskId, apiKey } = await createTask(imageUrl, prompt, model.name, size)
-          await addUserTask(session.userId, taskId, apiKey, 'edit', prompt)
+          const { taskId, apiKey, requestId } = await api.createTask({
+            imageUrl,
+            prompt,
+            model: model.name,
+            size,
+          })
           
-          // 中间结果：任务已创建
+          const task = await db.createTask({
+            taskId,
+            apiKey,
+            type: 'edit',
+            model: model.name,
+            prompt,
+            size,
+            inputImageUrl: imageUrl,
+            requestId,
+          })
+          await db.linkUserTask(session.userId, task.id)
+          
           toRecall = await sendWithRecall(session, config.msgEditCreated, config.recallEditCreated, toRecall)
           
-          const url = await waitTask(taskId, apiKey, config.editMaxRetries, config.editRetryInterval)
+          const result = await api.waitTask(taskId, apiKey, config.editMaxRetries, config.editRetryInterval)
           
-          if (config.enableLogs) logger.success(`图片编辑完成`)
+          await db.updateTask(taskId, {
+            status: 'SUCCEED',
+            outputImages: JSON.stringify(result.outputImages),
+            resultSeed: result.seed,
+          })
           
-          // 最终结果：图片（先撤回之前的消息，再发送图片）
+          // 撤回之前的消息
           if (toRecall.length > 0) {
             for (const msgId of toRecall) {
               try {
                 await session.bot.deleteMessage(session.channelId, msgId)
-              } catch (e) {
-                if (config.enableLogs) logger.warn(`撤回消息失败: ${e.message}`)
-              }
+              } catch (e) {}
             }
           }
-          return h.image(url)
+          
+          // 获取任务ID用于显示
+          const [dbTask] = await ctx.database.get('moda_tasks', { taskId })
+          return `【#${dbTask.id}】\n` + h.image(result.imageUrl)
         } catch (e) {
-          if (config.enableLogs) logger.error(`图片编辑失败: ${e.message}`)
+          logger.error(`编辑失败: ${e.message}`)
           return `❌ 编辑失败: ${e.message}`
         }
       })
   }
 
-  // 为生成模型注册别名子指令
+  // 注册生成模型命令
   for (const model of config.generateModels) {
-    if (!model.register) continue  // 跳过未启用注册的模型
+    if (!model.register) continue
     
     const cmdDesc = model.description || `使用 ${model.name} 生成图片`
     ctx.command(`moda.${model.alias} <prompt:text>`, cmdDesc)
-      .option('size', '-s <size:string> 指定图片分辨率 (如: 1024x1024)')
+      .option('size', '-s <size:string> 指定图片分辨率')
       .action(async ({ session, options }, prompt) => {
-        if (!prompt) return `请提供图片描述`
+        if (!prompt) return '请提供图片描述'
         
         const size = options?.size || model.defaultSize || config.defaultSize
-        if (config.enableLogs) logger.info(`用户 ${session.userId} 使用 ${model.alias} 生成图片: ${prompt}, 分辨率: ${size}`)
         
         try {
-          // 使用消息撤回功能
           let toRecall: string[] = []
           
-          // 进度消息：正在生成
           const startMsg = formatMessage(config.msgGenerateStart, {
             model: model.alias,
             size: size ? ` (${size})` : ''
           })
           toRecall = await sendWithRecall(session, startMsg, config.recallGenerateStart, toRecall)
           
-          // 传递负向提示词（如果启用）
           const negPrompt = config.enableNegativePrompt ? config.negativePrompt : undefined
-          const { taskId, apiKey } = await createTask('', prompt, model.name, size, negPrompt)
+          const { taskId, apiKey, requestId } = await api.createTask({
+            imageUrl: '',
+            prompt,
+            model: model.name,
+            size,
+            negativePrompt: negPrompt,
+          })
           
-          logger.info(`准备创建任务记录 - UserID: ${session.userId}, TaskID: ${taskId}`)
-          await addUserTask(session.userId, taskId, apiKey, 'generate', prompt)
-          logger.info('任务记录创建完成')
+          const task = await db.createTask({
+            taskId,
+            apiKey,
+            type: 'generate',
+            model: model.name,
+            prompt,
+            negativePrompt: negPrompt,
+            size,
+            requestId,
+          })
+          await db.linkUserTask(session.userId, task.id)
           
-          // 中间结果：任务已创建
           toRecall = await sendWithRecall(session, config.msgGenerateCreated, config.recallGenerateCreated, toRecall)
           
-          const url = await waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
+          const result = await api.waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
           
-          if (config.enableLogs) logger.success(`图片生成完成，返回给用户 ${session.userId}`)
+          await db.updateTask(taskId, {
+            status: 'SUCCEED',
+            outputImages: JSON.stringify(result.outputImages),
+            resultSeed: result.seed,
+          })
           
-          // 最终结果：图片（先撤回之前的消息）
+          // 撤回之前的消息
           if (toRecall.length > 0) {
             for (const msgId of toRecall) {
               try {
                 await session.bot.deleteMessage(session.channelId, msgId)
-              } catch (e) {
-                if (config.enableLogs) logger.warn(`撤回消息失败: ${e.message}`)
-              }
+              } catch (e) {}
             }
           }
-          return h.image(url)
+          
+          // 获取任务ID用于显示
+          const [dbTask2] = await ctx.database.get('moda_tasks', { taskId })
+          return `【#${dbTask2.id}】\n` + h.image(result.imageUrl)
         } catch (e) {
-          if (config.enableLogs) logger.error(`图片生成失败: ${e.message}`)
+          logger.error(`生成失败: ${e.message}`)
           return `❌ 生成失败: ${e.message}`
         }
       })
   }
-  
-  // 格式化时间
-  function formatTime(seconds: number): string {
-    if (seconds < 60) return `${seconds}秒`
-    const minutes = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    if (minutes < 60) return `${minutes}分${secs}秒`
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
-    return `${hours}小时${mins}分`
-  }
 
-  // 查看任务状态
-  ctx.command('moda.tasks', '查看我的任务状态')
-    .alias('任务列表')
-    .action(async ({ session }) => {
-      const tasks = await ctx.database.get('moda_tasks', { userId: session.userId }, {
-        sort: { id: 'desc' },
-        limit: 10,
-      })
+  // 任务查询命令
+  ctx.command('moda.tasks [page:number]', '查看我的任务')
+    .option('detail', '-d 显示更多详细信息')
+    .action(async ({ session, options }, page = 1) => {
+      const perPage = config.tasksPerPage
+      const offset = (page - 1) * perPage
       
-      if (!tasks || tasks.length === 0) {
-        return '📋 你还没有任何任务记录'
-      }
+      // 获取任务（多获取一个用于判断是否有下一页）
+      const tasks = await db.getUserTasks(session.userId, perPage + 1)
+      if (tasks.length === 0) return '📭 暂无任务记录'
       
-      const messages: any[] = ['📋 你的任务列表：\n']
+      // 分页处理
+      const hasMore = tasks.length > perPage
+      const displayTasks = tasks.slice(0, perPage)
       
-      for (const [index, task] of tasks.entries()) {
-        // 计算实际耗时
-        const endTime = task.endTime || Date.now()
-        const elapsed = Math.round((endTime - task.startTime) / 1000)
-        const typeText = task.type === 'edit' ? '图片编辑' : '图片生成'
-        const statusEmoji = task.status === 'SUCCEED' ? '✅' : 
-                           task.status === 'FAILED' ? '❌' : 
-                           task.status === 'RUNNING' ? '⏳' : '🔄'
+      const template = options?.detail ? config.taskListDetailTemplate : config.taskListTemplate
+      const messages: any[] = [`📋 最近的任务（第 ${page} 页）：\n`]
+      
+      for (const task of displayTasks) {
+        const info = '\n' + formatTask(task, template)
+        messages.push(info)
         
-        let taskInfo = `\n${index + 1}. ${statusEmoji} ${typeText} [内部号#${task.id}]\n`
-        taskInfo += `   提示词: ${task.prompt.substring(0, 30)}${task.prompt.length > 30 ? '...' : ''}\n`
-        taskInfo += `   状态: ${task.status}\n`
-        taskInfo += `   耗时: ${formatTime(elapsed)}${!task.endTime ? ' (进行中)' : ''}\n`
-        
-        messages.push(taskInfo)
-        
-        // 如果任务完成且有图片，显示缩略图
-        if (task.status === 'SUCCEED' && task.imageUrl) {
-          messages.push(h.image(task.imageUrl))
+        if (config.showImageInList && task.status === 'SUCCEED' && task.outputImages) {
+          const images = JSON.parse(task.outputImages)
+          messages.push(h.image(images[0]))
         }
       }
       
-      messages.push('\n💡 使用 moda.check <内部号> 查看完整图片')
+      // 分页提示
+      let footer = ''
+      if (hasMore) {
+        footer += `\n📄 使用 moda.tasks ${page + 1} 查看下一页`
+      }
+      if (!options?.detail) {
+        footer += '\n💡 使用 moda.tasks -d 查看更多详细信息'
+      }
+      if (footer) messages.push(footer)
+      
       return messages
     })
-  
-  // 查询特定任务
-  ctx.command('moda.check <id:number>', '查询任务状态')
-    .alias('查询任务')
-    .usage('使用任务列表中显示的内部号查询')
+
+  // 任务详情命令
+  ctx.command('moda.info <id:number>', '查看任务详情')
     .action(async ({ session }, id) => {
-      if (!id) return '请提供任务内部号，例如：moda.check 123'
+      if (!id) return '请提供任务ID'
       
-      const [task] = await ctx.database.get('moda_tasks', { id, userId: session.userId })
-      if (!task) return `未找到任务内部号 #${id}`
+      const taskInfo = await db.getTaskById(id, session.userId)
+      if (!taskInfo) return '❌ 任务不存在或无权访问'
+      
+      const isFav = await db.isFavorited(session.userId, id)
+      const response = formatTask(taskInfo, config.taskInfoTemplate, isFav)
+      
+      if (config.showImageInDetail && taskInfo.status === 'SUCCEED' && taskInfo.outputImages) {
+        const images = JSON.parse(taskInfo.outputImages)
+        return [response, h.image(images[0])]
+      }
+      
+      return response
+    })
+
+  // 收藏命令
+  ctx.command('moda.fav <id:number>', '收藏图片')
+    .action(async ({ session }, id) => {
+      if (!id) return '请提供任务ID'
       
       try {
-        const result = await getStatus(task.taskId, task.apiKey)
-        await updateTaskStatus(task.taskId, result.task_status)
-        
-        // 重新获取任务以获得更新后的 endTime
-        const [updatedTask] = await ctx.database.get('moda_tasks', { id, userId: session.userId })
-        const endTime = updatedTask.endTime || Date.now()
-        const elapsed = Math.round((endTime - task.startTime) / 1000)
-        const typeText = task.type === 'edit' ? '图片编辑' : '图片生成'
-        
-        let response = `📊 任务详情 [内部号#${task.id}]\n`
-        response += `任务 ID: ${task.taskId}\n\n`
-        response += `类型: ${typeText}\n`
-        response += `提示词: ${task.prompt}\n`
-        response += `状态: ${result.task_status}\n`
-        response += `耗时: ${formatTime(elapsed)}${!updatedTask.endTime ? ' (进行中)' : ''}\n`
-        
-        if (result.task_status === 'SUCCEED') {
-          response += '\n✅ 任务已完成！'
-          // 使用数据库中的图片或 API 返回的图片
-          const imageUrl = task.imageUrl || result.output_images[0]
-          return [response, h.image(imageUrl)]
-        } else if (result.task_status === 'FAILED') {
-          response += '\n❌ 任务失败'
-        } else {
-          response += '\n⏳ 任务进行中，请稍后再查询'
-        }
-        
-        return response
+        await db.addFavorite(session.userId, id)
+        return `⭐ 已收藏 #${id}`
       } catch (e) {
-        return `查询失败: ${e.message}`
+        if (e.message.includes('已经收藏')) {
+          return '⚠️ 已经收藏过了'
+        }
+        return `❌ 收藏失败: ${e.message}`
       }
     })
 
-  // moda.ai 指令 - AI 自动生成提示词并选择模型
+  // 取消收藏命令
+  ctx.command('moda.unfav <id:number>', '取消收藏')
+    .action(async ({ session }, id) => {
+      if (!id) return '请提供任务ID'
+      
+      const isFav = await db.isFavorited(session.userId, id)
+      if (!isFav) {
+        return '⚠️ 该任务未收藏'
+      }
+      
+      await db.removeFavorite(session.userId, id)
+      return `已取消收藏 #${id}`
+    })
+
+  // 清空收藏命令
+  ctx.command('moda.clearfav', '清空所有收藏')
+    .option('confirm', '-c 确认清空（必须）')
+    .action(async ({ session, options }) => {
+      if (!options?.confirm) {
+        return '⚠️ 此操作将清空所有收藏，无法恢复！\n请使用 moda.clearfav -c 确认执行'
+      }
+      
+      const count = await db.clearAllFavorites(session.userId)
+      
+      if (count === 0) {
+        return '📭 没有收藏需要清空'
+      }
+      
+      return `✅ 已清空 ${count} 个收藏`
+    })
+
+  // 重绘命令
+  ctx.command('moda.redraw <id:number>', '使用相同参数重新生成')
+    .option('seed', '-s <seed:number> 覆盖原 seed')
+    .action(async ({ session, options }, id) => {
+      if (!id) return '请提供任务ID'
+      
+      const originalTask = await db.getTaskById(id, session.userId)
+      if (!originalTask) return '❌ 任务不存在或无权访问'
+      
+      try {
+        let toRecall: string[] = []
+        
+        const startMsg = formatMessage(
+          originalTask.type === 'edit' ? config.msgEditStart : config.msgGenerateStart,
+          {
+            model: originalTask.model,
+            size: originalTask.size ? ` (${originalTask.size})` : ''
+          }
+        )
+        toRecall = await sendWithRecall(session, startMsg, 
+          originalTask.type === 'edit' ? config.recallEditStart : config.recallGenerateStart, 
+          toRecall)
+        
+        // 构建请求参数，只包含有效值
+        const requestParams: any = {
+          imageUrl: originalTask.inputImageUrl || '',
+          prompt: originalTask.prompt,
+          model: originalTask.model,
+        }
+        
+        // 只添加非空且非0的参数
+        if (originalTask.size) requestParams.size = originalTask.size
+        if (originalTask.negativePrompt) requestParams.negativePrompt = originalTask.negativePrompt
+        
+        // seed 处理：优先使用命令行参数，否则使用原任务的 resultSeed（API 返回的实际 seed）
+        const useSeed = options?.seed !== undefined ? options.seed : originalTask.resultSeed
+        if (useSeed && useSeed > 0) requestParams.seed = useSeed
+        
+        if (originalTask.steps && originalTask.steps > 0) requestParams.steps = originalTask.steps
+        if (originalTask.guidance && originalTask.guidance > 0) requestParams.guidance = originalTask.guidance
+        
+        const { taskId, apiKey, requestId } = await api.createTask(requestParams)
+        
+        const task = await db.createTask({
+          taskId,
+          apiKey,
+          type: originalTask.type,
+          model: originalTask.model,
+          prompt: originalTask.prompt,
+          negativePrompt: originalTask.negativePrompt,
+          size: originalTask.size,
+          seed: useSeed,
+          steps: originalTask.steps,
+          guidance: originalTask.guidance,
+          inputImageUrl: originalTask.inputImageUrl,
+          requestId,
+        })
+        await db.linkUserTask(session.userId, task.id)
+        
+        toRecall = await sendWithRecall(session, 
+          originalTask.type === 'edit' ? config.msgEditCreated : config.msgGenerateCreated,
+          originalTask.type === 'edit' ? config.recallEditCreated : config.recallGenerateCreated,
+          toRecall)
+        
+        const maxRetries = originalTask.type === 'edit' ? config.editMaxRetries : config.generateMaxRetries
+        const interval = originalTask.type === 'edit' ? config.editRetryInterval : config.generateRetryInterval
+        const result = await api.waitTask(taskId, apiKey, maxRetries, interval)
+        
+        await db.updateTask(taskId, {
+          status: 'SUCCEED',
+          outputImages: JSON.stringify(result.outputImages),
+          resultSeed: result.seed,
+        })
+        
+        // 撤回之前的消息
+        if (toRecall.length > 0) {
+          for (const msgId of toRecall) {
+            try {
+              await session.bot.deleteMessage(session.channelId, msgId)
+            } catch (e) {}
+          }
+        }
+        
+        const [dbTask] = await ctx.database.get('moda_tasks', { taskId })
+        return `【#${dbTask.id}】（重绘自 #${id}）\n` + h.image(result.imageUrl)
+      } catch (e) {
+        logger.error(`重绘失败: ${e.message}`)
+        return `❌ 重绘失败: ${e.message}`
+      }
+    })
+
+  // 查看收藏命令
+  ctx.command('moda.favs [page:number]', '查看我的收藏')
+    .option('detail', '-d 显示更多详细信息')
+    .action(async ({ session, options }, page = 1) => {
+      const perPage = config.favsPerPage
+      
+      // 获取收藏（多获取一个用于判断是否有下一页）
+      const favorites = await db.getUserFavorites(session.userId, perPage + 1)
+      if (favorites.length === 0) return '📭 暂无收藏'
+      
+      // 分页处理
+      const hasMore = favorites.length > perPage
+      const displayFavs = favorites.slice(0, perPage)
+      
+      const template = options?.detail ? config.favListDetailTemplate : config.favListTemplate
+      const messages: any[] = [`⭐ 我的收藏（第 ${page} 页）：\n`]
+      
+      for (const task of displayFavs) {
+        const info = '\n' + formatTask(task, template)
+        messages.push(info)
+        
+        if (config.showImageInList && task.status === 'SUCCEED' && task.outputImages) {
+          const images = JSON.parse(task.outputImages)
+          messages.push(h.image(images[0]))
+        }
+      }
+      
+      // 分页提示
+      let footer = ''
+      if (hasMore) {
+        footer += `\n📄 使用 moda.favs ${page + 1} 查看下一页`
+      }
+      if (!options?.detail) {
+        footer += '\n💡 使用 moda.favs -d 查看更多详细信息'
+      }
+      if (footer) messages.push(footer)
+      
+      return messages
+    })
+
+  // AI 命令（如果启用）
   if (config.enableAI) {
-    // 监听 ChatLuna 加载（如果已加载）
+    // 监听 ChatLuna 模型
     ctx.on('ready', () => {
       if (ctx.chatluna) {
         try {
-          listenModel(ctx)
+          listenModel(ctx, config, logger)
         } catch (e) {
           logger.error(`监听模型失败: ${e.message}`)
         }
       }
     })
 
-    // 总是注册命令，在执行时检查
     ctx.command('moda.ai <description:text>', 'AI 自动生成提示词并生成图片')
       .usage('需要安装并配置 ChatLuna 插件')
       .action(async ({ session }, description) => {
         if (!description) return '请提供图片描述'
-        
-        // 检查 ChatLuna 是否可用
-        if (!ctx.chatluna) {
-          return '❌ ChatLuna 服务不可用，请安装 ChatLuna 插件'
-        }
-
-        if (!config.aiModel) {
-          return '❌ 未配置 AI 模型，请在插件配置中选择一个模型'
-        }
+        if (!ctx.chatluna) return '❌ ChatLuna 服务不可用'
+        if (!config.aiModel) return '❌ 未配置 AI 模型'
         
         try {
-          // 使用消息撤回功能
           let toRecall: string[] = []
-          
-          // 进度消息：AI 分析中
           toRecall = await sendWithRecall(session, config.msgAiAnalyzing, config.recallAiAnalyzing, toRecall)
           
-          // 解析模型名称
           const [platform, modelName] = config.aiModel.split('/')
-          
-          // 创建模型
           const modelRef = await ctx.chatluna.createChatModel(platform, modelName)
-          
-          if (config.enableLogs) {
-            logger.info(`模型引用类型: ${typeof modelRef}`)
-            logger.info(`模型引用: ${modelRef}`)
-          }
-          
-          // 尝试获取实际模型
           const model = (modelRef as any).value || modelRef
           
           if (!model || typeof model.invoke !== 'function') {
-            logger.error(`模型无效或没有 invoke 方法`)
-            return '❌ 无法创建 AI 模型，请检查模型配置'
+            return '❌ 无法创建 AI 模型'
           }
           
-          // 构建提示词
           const modelList = config.generateModels
             .map((m, i) => `${i + 1}. ${m.alias}: ${m.description || m.name}`)
             .join('\n')
@@ -971,28 +564,18 @@ export function apply(ctx: Context, config: Config) {
             .replace(/{description}/g, description)
             .replace(/{modelList}/g, modelList)
           
-          // 调用 AI
           const response = await model.invoke(systemPrompt)
-          
-          // 获取响应内容
           const responseText = getMessageContent(response.content)
           
-          if (config.enableLogs) logger.info(`AI 响应: ${responseText}`)
           const jsonMatch = responseText.match(/\{[\s\S]*\}/)
-          if (!jsonMatch) {
-            return '❌ AI 响应格式错误，请重试'
-          }
+          if (!jsonMatch) return '❌ AI 响应格式错误'
           
           const result = JSON.parse(jsonMatch[0])
           const { prompt, model: selectedModelAlias, reason } = result
           
-          // 查找模型
           const selectedModel = config.generateModels.find(m => m.alias === selectedModelAlias)
-          if (!selectedModel) {
-            return `❌ AI 选择的模型 "${selectedModelAlias}" 不存在`
-          }
+          if (!selectedModel) return `❌ AI 选择的模型 "${selectedModelAlias}" 不存在`
           
-          // 中间结果：AI 生成的提示词
           const aiResultMsg = formatMessage(config.msgAiResult, {
             prompt: prompt,
             model: `${selectedModel.alias} (${selectedModel.description})`,
@@ -1000,32 +583,50 @@ export function apply(ctx: Context, config: Config) {
           })
           toRecall = await sendWithRecall(session, aiResultMsg, config.recallAiResult, toRecall)
           
-          // 生成图片
           const size = selectedModel.defaultSize || config.defaultSize
-          // 传递负向提示词（如果启用）
           const negPrompt = config.enableNegativePrompt ? config.negativePrompt : undefined
-          const { taskId, apiKey } = await createTask('', prompt, selectedModel.name, size, negPrompt)
-          await addUserTask(session.userId, taskId, apiKey, 'generate', prompt)
+          const { taskId, apiKey, requestId } = await api.createTask({
+            imageUrl: '',
+            prompt,
+            model: selectedModel.name,
+            size,
+            negativePrompt: negPrompt,
+          })
           
-          // 中间结果：任务创建
+          const task = await db.createTask({
+            taskId,
+            apiKey,
+            type: 'generate',
+            model: selectedModel.name,
+            prompt,
+            negativePrompt: negPrompt,
+            size,
+            requestId,
+          })
+          await db.linkUserTask(session.userId, task.id)
+          
           const taskMsg = `${config.msgTaskCreated}\n${config.msgTaskWaiting}`
           toRecall = await sendWithRecall(session, taskMsg, config.recallTaskCreated, toRecall)
           
-          const url = await waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
+          const taskResult = await api.waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
           
-          if (config.enableLogs) logger.success(`AI 生成图片完成`)
+          await db.updateTask(taskId, {
+            status: 'SUCCEED',
+            outputImages: JSON.stringify(taskResult.outputImages),
+            resultSeed: taskResult.seed,
+          })
           
-          // 最终结果：图片（先撤回之前的消息）
+          // 撤回之前的消息
           if (toRecall.length > 0) {
             for (const msgId of toRecall) {
               try {
                 await session.bot.deleteMessage(session.channelId, msgId)
-              } catch (e) {
-                if (config.enableLogs) logger.warn(`撤回消息失败: ${e.message}`)
-              }
+              } catch (e) {}
             }
           }
-          return h.image(url)
+          
+          const [dbTask3] = await ctx.database.get('moda_tasks', { taskId })
+          return `【#${dbTask3.id}】\n` + h.image(taskResult.imageUrl)
         } catch (e) {
           logger.error(`AI 生成失败: ${e.message}`)
           return `❌ 生成失败: ${e.message}`
@@ -1034,8 +635,8 @@ export function apply(ctx: Context, config: Config) {
   }
 }
 
-// ChatLuna 模型监听函数（按照文档）
-function listenModel(ctx: Context) {
+// ChatLuna 模型监听
+function listenModel(ctx: Context, config: any, logger: any) {
   const getModelNames = (service: PlatformService) => {
     try {
       return service.getAllModels(ModelType.llm).map((m) => Schema.const(m))
@@ -1058,7 +659,6 @@ function listenModel(ctx: Context) {
     }
   })
 
-  // 初始化时设置模型列表
   if (ctx.chatluna?.platform) {
     const models = getModelNames(ctx.chatluna.platform)
     if (models.length > 0) {

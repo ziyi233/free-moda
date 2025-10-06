@@ -13,7 +13,11 @@
 - 🤖 **AI 提示词生成**：集成 ChatLuna，AI 自动生成优化提示词并选择模型（可选）
 - 🚀 **表格配置**：直观的模型管理界面，支持自定义别名和描述
 - 🔄 **多 Key 轮询**：支持配置多个 API Key 自动轮询使用
-- 📊 **任务管理**：查看任务历史和状态，支持任务查询
+- 📊 **任务管理**：查看任务历史和状态，支持分页和详细查询
+- ⭐ **收藏功能**：收藏喜欢的图片，独立管理
+- 🎲 **Seed 记录**：自动记录每张图片的 seed，支持重绘
+- 🔁 **重绘功能**：使用相同参数重新生成，可覆盖 seed
+- 🎨 **灵活输出**：完全自定义输出格式，支持模板变量
 
 ## 快速开始
 
@@ -81,11 +85,45 @@ moda.edit 添加一副眼镜
 ### 任务管理
 
 ```bash
-# 查看任务列表
+# 查看任务列表（默认显示图片和 seed）
 moda.tasks
 
-# 查询具体任务
-moda.check 1
+# 查看第2页
+moda.tasks 2
+
+# 查看详细信息（包括分辨率、负向提示词、创建时间等）
+moda.tasks -d
+
+# 查看任务详情
+moda.info 123
+
+# 重绘图片（使用相同参数）
+moda.redraw 123
+
+# 重绘并覆盖 seed
+moda.redraw 123 -s 456
+```
+
+### 收藏管理
+
+```bash
+# 收藏图片
+moda.fav 123
+
+# 取消收藏
+moda.unfav 123
+
+# 清空所有收藏（需要确认）
+moda.clearfav -c
+
+# 查看收藏列表（默认显示图片）
+moda.favs
+
+# 查看第2页
+moda.favs 2
+
+# 查看详细信息
+moda.favs -d
 ```
 
 ## 配置说明
@@ -164,6 +202,45 @@ moda.check 1
     - `{description}`: 用户输入的描述
     - `{modelList}`: 可用模型列表（自动生成）
   - 默认模板会让 AI 生成英文提示词并选择合适的模型
+
+### 分页配置
+
+- **tasksPerPage**：任务列表每页显示数量（默认：5，范围：1-20）
+- **favsPerPage**：收藏列表每页显示数量（默认：10，范围：1-20）
+
+### 输出格式配置
+
+完全自定义输出格式，支持模板变量：
+
+**可用变量：**
+- `{status}` - 状态图标（✅/❌/⏳）
+- `{id}` - 任务ID
+- `{type}` - 类型（图片编辑/图片生成）
+- `{prompt}` - 提示词
+- `{seed}` - Seed值
+- `{model}` - 模型名称
+- `{time}` - 耗时
+- `{size}` - 分辨率
+- `{negativePrompt}` - 负向提示词
+- `{date}` - 创建时间
+- `{favorited}` - 收藏状态
+
+**模板配置：**
+- **taskListTemplate**：任务列表模板（简洁模式）
+- **taskListDetailTemplate**：任务列表详细模板（-d 参数）
+- **favListTemplate**：收藏列表模板（简洁模式）
+- **favListDetailTemplate**：收藏列表详细模板（-d 参数）
+- **taskInfoTemplate**：任务详情模板（moda.info）
+- **showImageInList**：在列表中显示图片（默认：true）
+- **showImageInDetail**：在详情中显示图片（默认：true）
+
+**示例模板：**
+```
+{status} 【#{id}】 {type}
+📝 {prompt}
+🎲 Seed: {seed}
+🎨 {model} | ⏱️ {time}
+```
 
 ### 调试选项
 
@@ -266,13 +343,38 @@ AI: ✨ AI 已生成提示词！
 4. 添加描述（可选）
 5. 勾选是否注册指令
 
+## 命令列表
+
+### 生成命令
+- `moda.qwen <prompt>` - 使用通用模型生成图片
+- `moda.beauty <prompt>` - 使用美人模型生成图片
+- `moda.pantyhose <prompt>` - 使用连裤袜模型生成图片
+- `moda.edit <prompt>` - 编辑图片（需引用图片）
+- `moda.ai <description>` - AI 自动生成提示词并生成图片
+
+### 管理命令
+- `moda.tasks [page]` - 查看任务列表
+- `moda.tasks -d` - 查看任务详细信息
+- `moda.info <id>` - 查看任务详情
+- `moda.redraw <id>` - 重绘图片
+- `moda.redraw <id> -s <seed>` - 重绘并覆盖 seed
+
+### 收藏命令
+- `moda.fav <id>` - 收藏图片
+- `moda.unfav <id>` - 取消收藏
+- `moda.clearfav -c` - 清空所有收藏（需要确认）
+- `moda.favs [page]` - 查看收藏列表
+- `moda.favs -d` - 查看收藏详细信息
+
 ## 注意事项
 
 - ⏱️ **图片生成**：通常需要 10-30 秒
 - ⏳ **图片编辑**：通常需要 10 分钟以上，请耐心等待
 - 🔑 **API Key**：必须绑定阿里云账号才能使用
 - 📊 **多 Key**：配置多个 API Key 可提高调用成功率
-- 🔄 **任务管理**：可使用 `moda.tasks` 查看任务进度
+- 🔄 **任务管理**：所有任务自动记录，支持分页查看
+- 🎲 **Seed 记录**：每张图片的 seed 会自动保存，方便重绘
+- ⭐ **收藏功能**：可以收藏喜欢的图片，独立管理
 
 ## 示例
 
