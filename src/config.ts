@@ -103,21 +103,36 @@ export const Config: Schema<Config> = Schema.intersect([
       description: Schema.string().description('描述'),
       register: Schema.boolean().description('注册指令').default(true),
       defaultSize: Schema.string().description('默认分辨率').default(undefined),
+      triggerWords: Schema.string().description('激发词（AI 生成时会自动添加到 prompt 中）').default(undefined),
+      style: Schema.string().description('风格标签（如 anime, realistic, film）').default(undefined),
+      useCases: Schema.string().description('适用场景（帮助 AI 选择模型）').default(undefined),
     }))
       .role('table')
       .description('生成模型列表')
       .default([
-        { name: 'Qwen/Qwen-Image', alias: 'qwen', description: '基础模型，无其他选择时选择', register: true, defaultSize: undefined },
-        { name: 'merjic/majicbeauty-qwen1', alias: 'beauty', description: '清冷风美人', register: true, defaultSize: undefined },
-        { name: 'violetzzzz/void_0-lowLR', alias: 'void', description: 'void_0风格，二次元相关建议用', register: true, defaultSize: undefined },
-        { name: 'dominik0420/august_film_2', alias: 'film', description: '电影风格增强', register: true, defaultSize: undefined },
-        { name: 'xmwd2009/qwen_image_xmwd_black_pantyhose_feet_lora', alias: 'hs', description: '黑丝特化。close-up of pantyhose feet', register: true, defaultSize: undefined },
-        { name: 'firefly123123/firefly', alias: 'firefly', description: '流萤，需要激发词liuying', register: true, defaultSize: undefined },
-        { name: 'whiteside123/qwenmsw2', alias: 'msw', description: '米山舞画风，二次元相关建议用', register: true, defaultSize: undefined },
-        { name: 'windsing/nahida_Qwen_1', alias: 'nxd', description: '纳西妲', register: true, defaultSize: undefined },
-        { name: 'zhouwenbin1994/zhigengniao', alias: 'zgn', description: '知更鸟cos', register: true, defaultSize: undefined },
-        { name: 'skyrimpasser/Evernight_Honkai_Star_Rail_character_lora', alias: 'cyy', description: '长夜月', register: true, defaultSize: undefined },
-        { name: 'Liudef/XB_PONY_MC_KTXY_MAX', alias: 'ktxy', description: '卡提希娅', register: true, defaultSize: undefined },
+        { name: 'Qwen/Qwen-Image', alias: 'qwen', description: '通用基础模型', style: 'general', useCases: '无特殊需求时的默认选择', register: true, defaultSize: undefined, triggerWords: undefined },
+        { name: 'merjic/majicbeauty-qwen1', alias: 'mj', description: '清冷风美人', style: 'realistic', useCases: '清冷气质的写实美人像', triggerWords: 'mj', register: true, defaultSize: undefined },
+        { name: 'violetzzzz/void_0-lowLR', alias: 'void', description: 'void_0风格二次元', style: 'anime', useCases: '二次元角色、插画风格', triggerWords: 'void 0 style', register: true, defaultSize: undefined },
+        { name: 'dominik0420/august_film_2', alias: 'film', description: '电影风格增强', style: 'film', useCases: '电影感场景、故事性画面', register: true, defaultSize: undefined, triggerWords: undefined },
+        { name: 'xmwd2009/qwen_image_xmwd_black_pantyhose_feet_lora', alias: 'hs', description: '黑丝特化', style: 'realistic', useCases: '黑色丝袜特写', triggerWords: 'close-up of pantyhose feet', register: true, defaultSize: undefined },
+        { name: 'firefly123123/firefly', alias: 'firefly', description: '崩坏星穹铁道角色流萤', style: 'anime', useCases: '流萤角色相关', triggerWords: 'liuying', register: true, defaultSize: undefined },
+        { name: 'whiteside123/qwenmsw2', alias: 'msw', description: '米山舞画风二次元', style: 'anime', useCases: '米山舞风格二次元插画', triggerWords: 'art by msw', register: true, defaultSize: undefined },
+        { name: 'windsing/nahida_Qwen_1', alias: 'nxd', description: '原神角色纳西妲', style: 'anime', useCases: '纳西妲角色相关', triggerWords: 'nahida', register: true, defaultSize: undefined },
+        { name: 'zhouwenbin1994/zhigengniao', alias: 'zgn', description: '崩坏星穹铁道角色知更鸟cos', style: 'realistic', useCases: '知更鸟cos照片', triggerWords: 'zhigengniao', register: true, defaultSize: undefined },
+        { name: 'skyrimpasser/Evernight_Honkai_Star_Rail_character_lora', alias: 'cyy', description: '崩坏星穹铁道角色长夜月', style: 'anime', useCases: '长夜月（三月七黑化）角色相关', triggerWords: 'changyeyue', register: true, defaultSize: undefined },
+        { name: 'Liudef/XB_PONY_MC_KTXY_MAX', alias: 'ktxy', description: '鸣潮角色卡提希娅', style: 'anime', useCases: '卡提希娅角色相关', triggerWords: 'KTXY', register: true, defaultSize: undefined },
+        { name: 'nikoovo/mygo_anime_lora_testv1', alias: 'mygo', description: 'mygo角色', style: 'anime', useCases: 'mygo相关角色', triggerWords: 'mygo_fanju', register: true, defaultSize: undefined },
+        { name: 'xmwd2009/qwen_image_xmwd_white_pantyhose_feet_lora', alias: 'bs', description: '白色丝袜特化', style: 'realistic', useCases: '白色丝袜特写', triggerWords: 'close-up of pantyhose feet', register: true, defaultSize: undefined },
+        { name: 'xmwd2009/qwen_image_xmwd_nude_pantyhose_feet_lora', alias: 'rs', description: '肉色丝袜特化', style: 'realistic', useCases: '肉色丝袜特写', triggerWords: 'close-up of pantyhose feet', register: true, defaultSize: undefined },
+        { name: 'Asense/SDLX-shenle', alias: 'sl', description: '阴阳师角色神乐', style: 'anime', useCases: '神乐角色相关', triggerWords: 'shenle', register: true, defaultSize: undefined },
+        { name: 'Zyw3040622524/kafuka2', alias: 'kfk', description: '崩坏星穹铁道角色卡夫卡', style: 'anime', useCases: '卡夫卡角色相关', triggerWords: 'kafuka', register: true, defaultSize: undefined },
+        { name: 'a7636378/ruan_mei.v4.5', alias: 'rm', description: '崩坏星穹铁道角色阮梅', style: 'anime', useCases: '阮梅角色相关', triggerWords: 'ruan_mei_HKSR', register: false, defaultSize: undefined },
+        { name: 'chsengni/lulu_lora_v5', alias: 'll', description: '卡通虚拟角色水豚噜噜', style: 'cartoon', useCases: '可爱卡通风格、萌系角色', triggerWords: 'lulu', register: true, defaultSize: undefined },
+        { name: 'xrundamlxg/nailong', alias: 'nl', description: '卡通虚拟角色奶龙（黄色）', style: 'cartoon', useCases: '可爱卡通风格、萌系角色', triggerWords: '奶龙', register: true, defaultSize: undefined },
+        { name: 'PAseer/QwenSmolderLOL', alias: 'smd', description: '英雄联盟角色斯莫德', style: 'game', useCases: '英雄联盟游戏角色', triggerWords: '哈基龙_smolder', register: true, defaultSize: undefined },
+        { name: 'yzh100200/fulilian', alias: 'fll', description: '芙莉莲角色', style: 'anime', useCases: '芙莉莲角色相关', triggerWords: 'fulilian', register: true, defaultSize: undefined },
+        { name: 'TimelineX/feibi', alias: 'fb', description: '鸣潮角色菲比', style: 'anime', useCases: '菲比角色相关', triggerWords: 'feibi', register: true, defaultSize: undefined },
+        { name: 'aojiepp/huahuo-D2', alias: 'hh', description: '崩坏星穹铁道角色花火/Sparkle真人cos', style: 'realistic', useCases: '花火角色cos照片、写实风格', register: true, defaultSize: undefined, triggerWords: undefined },
       ]),
     generateMaxRetries: Schema.number()
       .description('最大重试次数')
@@ -147,57 +162,6 @@ export const Config: Schema<Config> = Schema.intersect([
       .role('textarea', { rows: [3, 10] })
       .description('提示词模板 - 变量: {description}, {modelList}')
       .default(`Your task is to transform a simple user description into a high-quality, detailed, and expressive English prompt suitable for AI image generation, while also selecting the most appropriate model from the provided list.
-
-Follow these rules carefully:
-
-You are a Prompt optimizer designed to rewrite user inputs into high-quality Prompts that are more complete and expressive while preserving the original meaning.
-
-Task Requirements:
-
-For overly brief user inputs, reasonably infer and add details to enhance the visual completeness without altering the core meaning.
-
-Refine descriptions of subject characteristics, visual style, spatial relationships, lighting, and shot composition.
-
-If the image should include text, enclose that text in English quotation marks and specify its position (e.g., top-left corner, bottom-right corner) and style (e.g., handwritten font). Do not translate the text content.
-
-Match the rewritten prompt to a precise and niche style that aligns with the user’s intent. If the style is unspecified, choose the most appropriate one (e.g., realistic photography, digital illustration, anime, concept art, etc.).
-
-The rewritten prompt must be under 200 English words.
-
-Avoid any explicit, violent, political, or illegal content.
-
-Output Format (must be JSON):
-{
-"prompt": "Optimized detailed prompt (in English)",
-"model": "Chosen model alias",
-"reason": "Brief reason for choosing this model (in Chinese)"
-}
-
-Model selection:
-Choose the most suitable model from the following list:
-{modelList}
-
-User input description:
-{description}
-
-Example output:
-{
-"prompt": "A Chinese girl standing under a paper umbrella in gentle evening rain, wearing traditional hanfu with soft flowing sleeves. Wet stone pavement reflects the warm glow of lanterns, mist rising in the background, cinematic lighting, delicate facial expression, detailed texture of silk fabric, photorealistic 8K rendering, inspired by classic wuxia film tone.",
-"model": "realistic-photography-v6",
-"reason": "该模型在光影写实和人物细节方面表现最佳，适合写实雨景场景。"
-}
-
-Rewritten Prompt Examples for style reference:
-
-Dunhuang mural art style: Chinese animated illustration, masterwork. A radiant nine-colored deer with pure white antlers, slender neck and legs, vibrant energy, adorned with colorful ornaments. Divine flying apsaras aura, ethereal grace, elegant form. Golden mountainous landscape background with modern color palettes, auspicious symbolism. Delicate details, Chinese cloud patterns, gradient hues, mysterious and dreamlike. Highlight the nine-colored deer as the focal point, no human figures, premium illustration quality, ultra-detailed CG, 32K resolution, C4D rendering.
-
-Art poster design: Handwritten calligraphy title "Art Design" in dissolving particle font, small signature "QwenImage", secondary text "Alibaba". Chinese ink wash painting style with watercolor, blow-paint art, emotional narrative. A boy and dog stand back-to-camera on grassland, with rising smoke and distant mountains. Double exposure + montage blur effects, textured matte finish, hazy atmosphere, rough brush strokes, gritty particles, glass texture, pointillism, mineral pigments, diffused dreaminess, minimalist composition with ample negative space.
-
-Black-haired Chinese adult male, portrait above the collar. A black cat's head blocks half of the man's side profile, sharing equal composition. Shallow green jungle background. Graffiti style, clean minimalism, thick strokes. Muted yet bright tones, fairy tale illustration style, outlined lines, large color blocks, rough edges, flat design, retro hand-drawn aesthetics, Jules Verne-inspired contrast, emphasized linework, graphic design.
-
-Fashion photo of four young models showing phone lanyards. Diverse poses: two facing camera smiling, two side-view conversing. Casual light-colored outfits contrast with vibrant lanyards. Minimalist white/grey background. Focus on upper bodies highlighting lanyard details.
-
-Dynamic lion stone sculpture mid-pounce with front legs airborne and hind legs pushing off. Smooth lines and defined muscles show power. Faded ancient courtyard background with trees and stone steps. Weathered surface gives antique look. Documentary photography style with fine details.Your task is to transform a simple user description into a high-quality, detailed, and expressive English prompt suitable for AI image generation, while also selecting the most appropriate model from the provided list.
 
 Follow these rules carefully:
 

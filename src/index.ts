@@ -558,7 +558,14 @@ export function apply(ctx: Context, config: Config) {
           
           const modelList = config.generateModels
             .filter(m => m.register !== false)  // 只包含已注册的模型
-            .map((m, i) => `${i + 1}. ${m.alias}: ${m.description || m.name}`)
+            .map((m, i) => {
+              const parts = [`${i + 1}. alias="${m.alias}"`]
+              if (m.description) parts.push(`description="${m.description}"`)
+              if (m.style) parts.push(`style="${m.style}"`)
+              if (m.useCases) parts.push(`useCases="${m.useCases}"`)
+              if (m.triggerWords) parts.push(`triggerWords="${m.triggerWords}" (MUST include in prompt if selected)`)
+              return parts.join(', ')
+            })
             .join('\n')
           
           const systemPrompt = (config.aiPromptTemplate || '')

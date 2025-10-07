@@ -4,6 +4,10 @@ export interface ModelConfig {
   description?: string
   register?: boolean
   defaultSize?: string
+  // AI 选择辅助字段
+  triggerWords?: string    // 必需的激发词（如 "art by msw", "liuying"）
+  style?: string           // 风格标签（如 "anime", "realistic", "film"）
+  useCases?: string        // 适用场景（如 "二次元人物", "电影感场景", "特定角色"）
 }
 
 // 任务表（纯粹的任务记录）
