@@ -49,6 +49,12 @@ export function createDatabase(ctx: Context, logger: any) {
     return task || null
   }
 
+  // 根据ID获取任务（不检查权限）
+  async function getTaskByIdNoAuth(id: number): Promise<ModaTask | null> {
+    const [task] = await ctx.database.get('moda_tasks', { id })
+    return task || null
+  }
+
   // 获取用户的所有任务
   async function getUserTasks(userId: string, limit = 10): Promise<ModaTask[]> {
     // 先获取用户的任务ID列表
@@ -119,6 +125,7 @@ export function createDatabase(ctx: Context, logger: any) {
     linkUserTask,
     updateTask,
     getTaskById,
+    getTaskByIdNoAuth,
     getUserTasks,
     addFavorite,
     removeFavorite,

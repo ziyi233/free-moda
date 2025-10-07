@@ -399,8 +399,8 @@ export function apply(ctx: Context, config: Config) {
     .action(async ({ session, options }, id) => {
       if (!id) return '请提供任务ID'
       
-      const originalTask = await db.getTaskById(id, session.userId)
-      if (!originalTask) return '❌ 任务不存在或无权访问'
+      const originalTask = await db.getTaskByIdNoAuth(id)
+      if (!originalTask) return '❌ 任务不存在'
       
       try {
         let toRecall: string[] = []
@@ -557,6 +557,7 @@ export function apply(ctx: Context, config: Config) {
           }
           
           const modelList = config.generateModels
+            .filter(m => m.register !== false)  // 只包含已注册的模型
             .map((m, i) => `${i + 1}. ${m.alias}: ${m.description || m.name}`)
             .join('\n')
           
