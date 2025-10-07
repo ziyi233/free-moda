@@ -561,8 +561,6 @@ export function apply(ctx: Context, config: Config) {
             .map((m, i) => {
               const parts = [`${i + 1}. alias="${m.alias}"`]
               if (m.description) parts.push(`description="${m.description}"`)
-              if (m.style) parts.push(`style="${m.style}"`)
-              if (m.useCases) parts.push(`useCases="${m.useCases}"`)
               if (m.triggerWords) parts.push(`triggerWords="${m.triggerWords}" (MUST include in prompt if selected)`)
               return parts.join(', ')
             })
