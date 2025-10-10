@@ -23,6 +23,7 @@ export interface Config {
   // ChatLuna 工具注册
   registerSimpleTool: boolean
   registerAdvancedTool: boolean
+  toolOutputMode: 'simple' | 'detailed'
   chatLunaToolDescription: string
   chatLunaAdvancedToolDescription: string
   // 分页配置
@@ -232,6 +233,12 @@ Dynamic lion stone sculpture mid-pounce with front legs airborne and hind legs p
     registerAdvancedTool: Schema.boolean()
       .description('注册高级工具（image_generate_advanced）- AI 手动选择模型')
       .default(false),
+    toolOutputMode: Schema.union([
+      Schema.const('simple').description('仅返回图片链接'),
+      Schema.const('detailed').description('返回详细信息（任务ID、提示词、模型、图片链接、种子等）'),
+    ])
+      .description('工具返回内容模式')
+      .default('simple'),
     chatLunaAdvancedToolDescription: Schema.string()
       .role('textarea', { rows: [3, 10] })
       .description('高级工具说明 - 支持变量: {modelList}')

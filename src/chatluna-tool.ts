@@ -8,42 +8,59 @@ import { Config } from './config'
 import { createAPI } from './api'
 import { createDatabase } from './database'
 
-export const inject = {
-    optional: ['chatluna']
-}
-
 export function apply(ctx: Context, config: Config, api: ReturnType<typeof createAPI>, db: ReturnType<typeof createDatabase>) {
-    const plugin = new ChatLunaPlugin(
-        ctx,
-        config as unknown as ChatLunaPlugin.Config,
-        'free-moda',
-        false
-    )
+    const logger = ctx.logger('free-moda:chatluna-tools')
+    
+    // 使用 ctx.plugin 创建子插件，声明对 chatluna 的依赖
+    ctx.plugin({
+        apply: (ctx: Context) => {
+            logger.info('ChatLuna 工具注册子插件已启动')
+            
+            const plugin = new ChatLunaPlugin(
+                ctx,
+                config as unknown as ChatLunaPlugin.Config,
+                'free-moda',
+                false
+            )
 
-    ctx.on('ready', () => {
-        if (config.registerSimpleTool) {
-            plugin.registerTool('image_generate', {
-                selector() {
-                    return true
-                },
-                createTool() {
-                    // @ts-ignore - Type mismatch with ChatLuna plugin system
-                    return new ImageGenerateTool(ctx, config, api, db)
+            ctx.on('ready', async () => {
+                // 等待 chatluna 服务可用
+                await ctx.chatluna
+                logger.info('ChatLuna 服务已就绪，开始注册工具')
+
+                if (config.registerSimpleTool) {
+                    plugin.registerTool('image_generate', {
+                        selector() {
+                            return true
+                        },
+                        createTool() {
+                            // @ts-ignore - Type mismatch with ChatLuna plugin system
+                            return new ImageGenerateTool(ctx, config, api, db)
+                        }
+                    })
+                    logger.success('已注册简单工具: image_generate')
+                }
+
+                if (config.registerAdvancedTool) {
+                    plugin.registerTool('image_generate_advanced', {
+                        selector() {
+                            return true
+                        },
+                        createTool() {
+                            // @ts-ignore - Type mismatch with ChatLuna plugin system
+                            return new ImageGenerateAdvancedTool(ctx, config, api, db)
+                        }
+                    })
+                    logger.success('已注册高级工具: image_generate_advanced')
                 }
             })
-        }
-
-        if (config.registerAdvancedTool) {
-            plugin.registerTool('image_generate_advanced', {
-                selector() {
-                    return true
-                },
-                createTool() {
-                    // @ts-ignore - Type mismatch with ChatLuna plugin system
-                    return new ImageGenerateAdvancedTool(ctx, config, api, db)
-                }
+            
+            ctx.on('dispose', () => {
+                logger.warn('ChatLuna 工具注册子插件已卸载')
             })
-        }
+        },
+        inject: ['chatluna'],
+        name: 'free-moda:chatluna-tools'
     })
 }
 
@@ -191,8 +208,12 @@ class ImageGenerateTool extends StructuredTool {
         resultSeed: taskResult.seed,
       })
 
-      // 返回图片 URL
-      return `Successfully generated image!\nTask ID: #${task.id}\nOptimized Prompt: ${prompt}\nModel: ${selectedModel.alias} (${selectedModel.description})\nImage URL: ${taskResult.imageUrl}\nSeed: ${taskResult.seed}`
+      // 根据配置返回不同格式
+      if (this.config.toolOutputMode === 'simple') {
+        return taskResult.imageUrl
+      } else {
+        return `Successfully generated image!\nTask ID: #${task.id}\nOptimized Prompt: ${prompt}\nModel: ${selectedModel.alias} (${selectedModel.description})\nImage URL: ${taskResult.imageUrl}\nSeed: ${taskResult.seed}`
+      }
 
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Unknown error occurred.'
@@ -324,8 +345,12 @@ class ImageGenerateAdvancedTool extends StructuredTool {
         resultSeed: taskResult.seed,
       })
 
-      // 返回图片 URL
-      return `Successfully generated image!\nTask ID: #${task.id}\nModel: ${selectedModel.alias} (${selectedModel.description})\nImage URL: ${taskResult.imageUrl}\nSeed: ${taskResult.seed}`
+      // 根据配置返回不同格式
+      if (this.config.toolOutputMode === 'simple') {
+        return taskResult.imageUrl
+      } else {
+        return `Successfully generated image!\nTask ID: #${task.id}\nModel: ${selectedModel.alias} (${selectedModel.description})\nImage URL: ${taskResult.imageUrl}\nSeed: ${taskResult.seed}`
+      }
 
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Unknown error occurred.'

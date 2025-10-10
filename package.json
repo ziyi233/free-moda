@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-free-moda",
   "description": "免费画图插件，实现chatluna工具注册、模型单独注册成指令、API Key 轮询、AI 生成提示词、自动识别分辨率、查询记录、收藏图片seed快速重绘、支持自定义输出模板",
-  "version": "2.0.0",
+  "version": "2.0.3",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
