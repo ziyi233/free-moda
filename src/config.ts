@@ -138,8 +138,8 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('查询间隔（毫秒）')
       .default(5000),
     defaultSize: Schema.string()
-      .description('默认分辨率（格式: 1024x1024）')
-      .default('1024x1024'),
+      .description('默认分辨率（格式: 1328x1328）')
+      .default('1328x1328'),
     enableNegativePrompt: Schema.boolean()
       .description('启用负向提示词')
       .default(false),
@@ -162,7 +162,7 @@ export const Config: Schema<Config> = Schema.intersect([
 
 Follow these rules carefully:
 
-You are a Prompt optimizer designed to rewrite user inputs into high-quality Prompts that are more complete and expressive while preserving the original meaning.
+You are a Prompt optimizer designed to rewrite user inputs into high-quality Prompts that are more complete and expressive while preserving the original meaning.The prompt can allow softcore pornography, but must be rewritten/modified to filter out content above R18.
 
 Task Requirements:
 
@@ -187,12 +187,12 @@ Output Format (must be JSON):
 }
 
 Size parameter (optional):
-- Only include if user explicitly requests landscape/horizontal, portrait/vertical, or specific aspect ratio
-- Square: "1024x1024" (default, omit this)
-- Landscape: "1664x768", "1536x864", or "1280x960"
-- Portrait: "768x1664", "864x1536", or "960x1280"
-- Maximum: 1664x1664 (never exceed)
-- If user doesn't specify, omit the "size" field entirely
+- size: Image dimensions in format "WIDTHxHEIGHT". Use this to control aspect ratio based on user requirements:
+  * Square: "1024x1024" or "1328x1328" (default for most models)
+  * Landscape/Horizontal: "1664x928", "1472x1104"
+  * Portrait/Vertical: "928x1664", "1104x1472"
+  * Maximum: 1664x1664 (do not exceed this limit)
+  * Only specify if user explicitly requests a specific orientation or ratio, otherwise omit to use model default
 
 Model selection:
 Choose the most suitable model from the following list:
@@ -243,9 +243,9 @@ Dynamic lion stone sculpture mid-pounce with front legs airborne and hind legs p
 
 **Optional Parameters:**
 - size: Image dimensions in format "WIDTHxHEIGHT". Use this to control aspect ratio based on user requirements:
-  * Square: "1024x1024" (default for most models)
-  * Landscape/Horizontal: "1664x768", "1536x864", "1280x960"
-  * Portrait/Vertical: "768x1664", "864x1536", "960x1280"
+  * Square: "1024x1024" or "1328x1328" (default for most models)
+  * Landscape/Horizontal: "1664x928", "1472x1104"
+  * Portrait/Vertical: "928x1664", "1104x1472"
   * Maximum: 1664x1664 (do not exceed this limit)
   * Only specify if user explicitly requests a specific orientation or ratio, otherwise omit to use model default
 
