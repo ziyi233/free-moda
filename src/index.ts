@@ -87,7 +87,7 @@ export function apply(ctx: Context, config: Config) {
   })
 
   // 工具函数
-  const { formatMessage, sendWithRecall, formatTime, formatTask } = utils
+  const { formatMessage, sendWithRecall, formatTime, formatTask, createMessageCollector } = utils
 
   // 图片尺寸相关
   async function getImageSize(url: string): Promise<string | null> {
@@ -165,13 +165,14 @@ export function apply(ctx: Context, config: Config) {
             if (detectedSize) size = calculateScaledSize(detectedSize)
           }
           
-          let toRecall: string[] = []
+          const collector = createMessageCollector(session)
           
+          // 编辑开始
           const startMsg = formatMessage(config.msgEditStart, {
             model: model.alias,
             size: size ? ` (${size})` : ''
           })
-          toRecall = await sendWithRecall(session, startMsg, config.recallEditStart, toRecall)
+          await collector.add(startMsg, config.msgEditStartMode, config.recallEditStart)
           
           const { taskId, apiKey, requestId } = await api.createTask({
             imageUrl,
@@ -192,7 +193,11 @@ export function apply(ctx: Context, config: Config) {
           })
           await db.linkUserTask(session.userId, task.id)
           
-          toRecall = await sendWithRecall(session, config.msgEditCreated, config.recallEditCreated, toRecall)
+          // 编辑任务已创建
+          await collector.add(config.msgEditCreated, config.msgEditCreatedMode, config.recallEditCreated)
+          
+          // 立即发送合并转发消息（如果有）
+          await collector.finish()
           
           const result = await api.waitTask(taskId, apiKey, config.editMaxRetries, config.editRetryInterval)
           
@@ -201,15 +206,6 @@ export function apply(ctx: Context, config: Config) {
             outputImages: JSON.stringify(result.outputImages),
             resultSeed: result.seed,
           })
-          
-          // 撤回之前的消息
-          if (toRecall.length > 0) {
-            for (const msgId of toRecall) {
-              try {
-                await session.bot.deleteMessage(session.channelId, msgId)
-              } catch (e) {}
-            }
-          }
           
           // 获取任务ID用于显示
           const [dbTask] = await ctx.database.get('moda_tasks', { taskId })
@@ -234,13 +230,14 @@ export function apply(ctx: Context, config: Config) {
         const size = options?.size || model.defaultSize || config.defaultSize
         
         try {
-          let toRecall: string[] = []
+          const collector = createMessageCollector(session)
           
+          // 生成开始
           const startMsg = formatMessage(config.msgGenerateStart, {
             model: model.alias,
             size: size ? ` (${size})` : ''
           })
-          toRecall = await sendWithRecall(session, startMsg, config.recallGenerateStart, toRecall)
+          await collector.add(startMsg, config.msgGenerateStartMode, config.recallGenerateStart)
           
           const negPrompt = config.enableNegativePrompt ? config.negativePrompt : undefined
           const { taskId, apiKey, requestId } = await api.createTask({
@@ -263,7 +260,11 @@ export function apply(ctx: Context, config: Config) {
           })
           await db.linkUserTask(session.userId, task.id)
           
-          toRecall = await sendWithRecall(session, config.msgGenerateCreated, config.recallGenerateCreated, toRecall)
+          // 生成任务已创建
+          await collector.add(config.msgGenerateCreated, config.msgGenerateCreatedMode, config.recallGenerateCreated)
+          
+          // 立即发送合并转发消息（如果有）
+          await collector.finish()
           
           const result = await api.waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
           
@@ -272,15 +273,6 @@ export function apply(ctx: Context, config: Config) {
             outputImages: JSON.stringify(result.outputImages),
             resultSeed: result.seed,
           })
-          
-          // 撤回之前的消息
-          if (toRecall.length > 0) {
-            for (const msgId of toRecall) {
-              try {
-                await session.bot.deleteMessage(session.channelId, msgId)
-              } catch (e) {}
-            }
-          }
           
           // 获取任务ID用于显示
           const [dbTask2] = await ctx.database.get('moda_tasks', { taskId })
@@ -300,7 +292,7 @@ export function apply(ctx: Context, config: Config) {
       const offset = (page - 1) * perPage
       
       // 获取任务（多获取一个用于判断是否有下一页）
-      const tasks = await db.getUserTasks(session.userId, perPage + 1)
+      const tasks = await db.getUserTasks(session.userId, perPage + 1, offset)
       if (tasks.length === 0) return '📭 暂无任务记录'
       
       // 分页处理
@@ -308,6 +300,39 @@ export function apply(ctx: Context, config: Config) {
       const displayTasks = tasks.slice(0, perPage)
       
       const template = options?.detail ? config.taskListDetailTemplate : config.taskListTemplate
+      
+      // 如果使用合并转发
+      if (config.useForwardForTasks) {
+        const forwardMessages: string[] = []
+        
+        for (const task of displayTasks) {
+          let msg = formatTask(task, template)
+          if (config.showImageInList && task.status === 'SUCCEED' && task.outputImages) {
+            const images = JSON.parse(task.outputImages)
+            msg += '\n' + h.image(images[0])
+          }
+          forwardMessages.push(msg)
+        }
+        
+        // 添加分页提示
+        let footer = `📋 最近的任务（第 ${page} 页）`
+        if (hasMore) {
+          footer += `\n📄 使用 moda.tasks ${page + 1} 查看下一页`
+        }
+        if (!options?.detail) {
+          footer += '\n💡 使用 moda.tasks -d 查看更多详细信息'
+        }
+        forwardMessages.unshift(footer)
+        
+        // 构建合并转发
+        const forwardNodes = `<message forward>${forwardMessages.map((msg) => 
+          `<message><author id="${session.selfId}" nickname="${session.bot.user?.name || 'Bot'}"/>${msg}</message>`
+        ).join('')}</message>`
+        
+        return forwardNodes
+      }
+      
+      // 普通消息模式
       const messages: any[] = [`📋 最近的任务（第 ${page} 页）：\n`]
       
       for (const task of displayTasks) {
@@ -344,6 +369,24 @@ export function apply(ctx: Context, config: Config) {
       const isFav = await db.isFavorited(session.userId, id)
       const response = formatTask(taskInfo, config.taskInfoTemplate, isFav)
       
+      // 如果使用合并转发
+      if (config.useForwardForInfo) {
+        const forwardMessages: any[] = [response]
+        
+        if (config.showImageInDetail && taskInfo.status === 'SUCCEED' && taskInfo.outputImages) {
+          const images = JSON.parse(taskInfo.outputImages)
+          forwardMessages.push(String(h.image(images[0])))
+        }
+        
+        // 构建合并转发
+        const forwardNodes = `<message forward>${forwardMessages.map((msg) => 
+          `<message><author id="${session.selfId}" nickname="${session.bot.user?.name || 'Bot'}"/>${msg}</message>`
+        ).join('')}</message>`
+        
+        return forwardNodes
+      }
+      
+      // 普通消息模式
       if (config.showImageInDetail && taskInfo.status === 'SUCCEED' && taskInfo.outputImages) {
         const images = JSON.parse(taskInfo.outputImages)
         return [response, h.image(images[0])]
@@ -409,8 +452,9 @@ export function apply(ctx: Context, config: Config) {
       if (!originalTask) return '❌ 任务不存在'
       
       try {
-        let toRecall: string[] = []
+        const collector = createMessageCollector(session)
         
+        // 开始消息
         const startMsg = formatMessage(
           originalTask.type === 'edit' ? config.msgEditStart : config.msgGenerateStart,
           {
@@ -418,9 +462,9 @@ export function apply(ctx: Context, config: Config) {
             size: originalTask.size ? ` (${originalTask.size})` : ''
           }
         )
-        toRecall = await sendWithRecall(session, startMsg, 
-          originalTask.type === 'edit' ? config.recallEditStart : config.recallGenerateStart, 
-          toRecall)
+        const startMode = originalTask.type === 'edit' ? config.msgEditStartMode : config.msgGenerateStartMode
+        const startRecall = originalTask.type === 'edit' ? config.recallEditStart : config.recallGenerateStart
+        await collector.add(startMsg, startMode, startRecall)
         
         // 构建请求参数，只包含有效值
         const requestParams: any = {
@@ -458,10 +502,14 @@ export function apply(ctx: Context, config: Config) {
         })
         await db.linkUserTask(session.userId, task.id)
         
-        toRecall = await sendWithRecall(session, 
-          originalTask.type === 'edit' ? config.msgEditCreated : config.msgGenerateCreated,
-          originalTask.type === 'edit' ? config.recallEditCreated : config.recallGenerateCreated,
-          toRecall)
+        // 任务已创建消息
+        const createdMsg = originalTask.type === 'edit' ? config.msgEditCreated : config.msgGenerateCreated
+        const createdMode = originalTask.type === 'edit' ? config.msgEditCreatedMode : config.msgGenerateCreatedMode
+        const createdRecall = originalTask.type === 'edit' ? config.recallEditCreated : config.recallGenerateCreated
+        await collector.add(createdMsg, createdMode, createdRecall)
+        
+        // 立即发送合并转发消息（如果有）
+        await collector.finish()
         
         const maxRetries = originalTask.type === 'edit' ? config.editMaxRetries : config.generateMaxRetries
         const interval = originalTask.type === 'edit' ? config.editRetryInterval : config.generateRetryInterval
@@ -472,15 +520,6 @@ export function apply(ctx: Context, config: Config) {
           outputImages: JSON.stringify(result.outputImages),
           resultSeed: result.seed,
         })
-        
-        // 撤回之前的消息
-        if (toRecall.length > 0) {
-          for (const msgId of toRecall) {
-            try {
-              await session.bot.deleteMessage(session.channelId, msgId)
-            } catch (e) {}
-          }
-        }
         
         const [dbTask] = await ctx.database.get('moda_tasks', { taskId })
         return `【#${dbTask.id}】（重绘自 #${id}）\n` + h.image(result.imageUrl)
@@ -495,9 +534,10 @@ export function apply(ctx: Context, config: Config) {
     .option('detail', '-d 显示更多详细信息')
     .action(async ({ session, options }, page = 1) => {
       const perPage = config.favsPerPage
+      const offset = (page - 1) * perPage
       
       // 获取收藏（多获取一个用于判断是否有下一页）
-      const favorites = await db.getUserFavorites(session.userId, perPage + 1)
+      const favorites = await db.getUserFavorites(session.userId, perPage + 1, offset)
       if (favorites.length === 0) return '📭 暂无收藏'
       
       // 分页处理
@@ -505,6 +545,39 @@ export function apply(ctx: Context, config: Config) {
       const displayFavs = favorites.slice(0, perPage)
       
       const template = options?.detail ? config.favListDetailTemplate : config.favListTemplate
+      
+      // 如果使用合并转发
+      if (config.useForwardForFavs) {
+        const forwardMessages: string[] = []
+        
+        for (const task of displayFavs) {
+          let msg = formatTask(task, template)
+          if (config.showImageInList && task.status === 'SUCCEED' && task.outputImages) {
+            const images = JSON.parse(task.outputImages)
+            msg += '\n' + h.image(images[0])
+          }
+          forwardMessages.push(msg)
+        }
+        
+        // 添加分页提示
+        let footer = `⭐ 我的收藏（第 ${page} 页）`
+        if (hasMore) {
+          footer += `\n📄 使用 moda.favs ${page + 1} 查看下一页`
+        }
+        if (!options?.detail) {
+          footer += '\n💡 使用 moda.favs -d 查看更多详细信息'
+        }
+        forwardMessages.unshift(footer)
+        
+        // 构建合并转发
+        const forwardNodes = `<message forward>${forwardMessages.map((msg) => 
+          `<message><author id="${session.selfId}" nickname="${session.bot.user?.name || 'Bot'}"/>${msg}</message>`
+        ).join('')}</message>`
+        
+        return forwardNodes
+      }
+      
+      // 普通消息模式
       const messages: any[] = [`⭐ 我的收藏（第 ${page} 页）：\n`]
       
       for (const task of displayFavs) {
@@ -551,8 +624,10 @@ export function apply(ctx: Context, config: Config) {
         if (!config.aiModel) return '❌ 未配置 AI 模型'
         
         try {
-          let toRecall: string[] = []
-          toRecall = await sendWithRecall(session, config.msgAiAnalyzing, config.recallAiAnalyzing, toRecall)
+          const collector = createMessageCollector(session)
+          
+          // AI 分析中
+          await collector.add(config.msgAiAnalyzing, config.msgAiAnalyzingMode, config.recallAiAnalyzing)
           
           const [platform, modelName] = config.aiModel.split('/')
           const modelRef = await ctx.chatluna.createChatModel(platform, modelName)
@@ -588,12 +663,13 @@ export function apply(ctx: Context, config: Config) {
           const selectedModel = config.generateModels.find(m => m.alias === selectedModelAlias)
           if (!selectedModel) return `❌ AI 选择的模型 "${selectedModelAlias}" 不存在`
           
+          // AI 结果
           const aiResultMsg = formatMessage(config.msgAiResult, {
             prompt: prompt,
             model: `${selectedModel.alias} (${selectedModel.description})`,
             reason: reason
           })
-          toRecall = await sendWithRecall(session, aiResultMsg, config.recallAiResult, toRecall)
+          await collector.add(aiResultMsg, config.msgAiResultMode, config.recallAiResult)
           
           // 优先使用 AI 指定的 size，其次是模型默认，最后是全局默认
           const size = aiSize || selectedModel.defaultSize || config.defaultSize
@@ -618,8 +694,12 @@ export function apply(ctx: Context, config: Config) {
           })
           await db.linkUserTask(session.userId, task.id)
           
+          // 任务已创建
           const taskMsg = `${config.msgTaskCreated}\n${config.msgTaskWaiting}`
-          toRecall = await sendWithRecall(session, taskMsg, config.recallTaskCreated, toRecall)
+          await collector.add(taskMsg, config.msgTaskCreatedMode, config.recallTaskCreated)
+          
+          // 立即发送合并转发消息（如果有）
+          await collector.finish()
           
           const taskResult = await api.waitTask(taskId, apiKey, config.generateMaxRetries, config.generateRetryInterval)
           
@@ -628,15 +708,6 @@ export function apply(ctx: Context, config: Config) {
             outputImages: JSON.stringify(taskResult.outputImages),
             resultSeed: taskResult.seed,
           })
-          
-          // 撤回之前的消息
-          if (toRecall.length > 0) {
-            for (const msgId of toRecall) {
-              try {
-                await session.bot.deleteMessage(session.channelId, msgId)
-              } catch (e) {}
-            }
-          }
           
           const [dbTask3] = await ctx.database.get('moda_tasks', { taskId })
           return `【#${dbTask3.id}】\n` + h.image(taskResult.imageUrl)

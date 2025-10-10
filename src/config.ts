@@ -39,20 +39,31 @@ export interface Config {
   showImageInDetail: boolean
   // 进度消息配置
   msgEditStart: string
+  msgEditStartMode: 'send' | 'forward'
   recallEditStart: boolean
   msgEditCreated: string
+  msgEditCreatedMode: 'send' | 'forward'
   recallEditCreated: boolean
   msgGenerateStart: string
+  msgGenerateStartMode: 'send' | 'forward'
   recallGenerateStart: boolean
   msgGenerateCreated: string
+  msgGenerateCreatedMode: 'send' | 'forward'
   recallGenerateCreated: boolean
   msgAiAnalyzing: string
+  msgAiAnalyzingMode: 'send' | 'forward'
   recallAiAnalyzing: boolean
   msgAiResult: string
+  msgAiResultMode: 'send' | 'forward'
   recallAiResult: boolean
   msgTaskCreated: string
+  msgTaskCreatedMode: 'send' | 'forward'
   recallTaskCreated: boolean
   msgTaskWaiting: string
+  // 列表输出模式
+  useForwardForTasks: boolean
+  useForwardForFavs: boolean
+  useForwardForInfo: boolean
   enableLogs: boolean
 }
 
@@ -318,56 +329,107 @@ If user wants "a beautiful anime girl", and you choose the "void" model:
       .description('编辑开始 - 变量: {model}, {size}')
       .default('⚙️ 正在使用 {model} 编辑图片...{size}')
       .role('textarea', { rows: [2, 4] }),
+    msgEditStartMode: Schema.union([
+      Schema.const('send').description('单独发送'),
+      Schema.const('forward').description('并入合并转发'),
+    ])
+      .description('↑ 发送模式')
+      .default('forward'),
     recallEditStart: Schema.boolean()
-      .description('↑ 自动撤回')
+      .description('↑ 自动撤回（仅单独发送模式有效）')
       .default(true),
     msgEditCreated: Schema.string()
       .description('编辑任务已创建')
       .default('⏳ 任务已创建，预计 30-120 秒...\n💡 使用 moda.tasks 可查看任务状态')
       .role('textarea', { rows: [2, 4] }),
+    msgEditCreatedMode: Schema.union([
+      Schema.const('send').description('单独发送'),
+      Schema.const('forward').description('并入合并转发'),
+    ])
+      .description('↑ 发送模式')
+      .default('forward'),
     recallEditCreated: Schema.boolean()
-      .description('↑ 自动撤回')
+      .description('↑ 自动撤回（仅单独发送模式有效）')
       .default(false),
     msgGenerateStart: Schema.string()
       .description('生成开始 - 变量: {model}, {size}')
       .default('🎨 正在使用 {model} 生成图片...{size}')
       .role('textarea', { rows: [2, 4] }),
+    msgGenerateStartMode: Schema.union([
+      Schema.const('send').description('单独发送'),
+      Schema.const('forward').description('并入合并转发'),
+    ])
+      .description('↑ 发送模式')
+      .default('forward'),
     recallGenerateStart: Schema.boolean()
-      .description('↑ 自动撤回')
+      .description('↑ 自动撤回（仅单独发送模式有效）')
       .default(true),
     msgGenerateCreated: Schema.string()
       .description('生成任务已创建')
       .default('⏳ 任务已创建，预计 10-30 秒...\n💡 使用 moda.tasks 可查看任务状态')
       .role('textarea', { rows: [2, 4] }),
+    msgGenerateCreatedMode: Schema.union([
+      Schema.const('send').description('单独发送'),
+      Schema.const('forward').description('并入合并转发'),
+    ])
+      .description('↑ 发送模式')
+      .default('forward'),
     recallGenerateCreated: Schema.boolean()
-      .description('↑ 自动撤回')
+      .description('↑ 自动撤回（仅单独发送模式有效）')
       .default(false),
     msgAiAnalyzing: Schema.string()
       .description('AI 分析中')
       .default('🤖 AI 正在分析并生成提示词...')
       .role('textarea', { rows: [2, 4] }),
+    msgAiAnalyzingMode: Schema.union([
+      Schema.const('send').description('单独发送'),
+      Schema.const('forward').description('并入合并转发'),
+    ])
+      .description('↑ 发送模式')
+      .default('forward'),
     recallAiAnalyzing: Schema.boolean()
-      .description('↑ 自动撤回')
+      .description('↑ 自动撤回（仅单独发送模式有效）')
       .default(true),
     msgAiResult: Schema.string()
       .description('AI 结果 - 变量: {prompt}, {model}, {reason}')
       .default('✨ AI 已生成提示词！\n\n📝 提示词: {prompt}\n🎨 模型: {model}\n💡 理由: {reason}\n\n开始生成图片...')
       .role('textarea', { rows: [4, 8] }),
+    msgAiResultMode: Schema.union([
+      Schema.const('send').description('单独发送'),
+      Schema.const('forward').description('并入合并转发'),
+    ])
+      .description('↑ 发送模式')
+      .default('forward'),
     recallAiResult: Schema.boolean()
-      .description('↑ 自动撤回')
+      .description('↑ 自动撤回（仅单独发送模式有效）')
       .default(false),
     msgTaskCreated: Schema.string()
-      .description('AI 任务已创建')
-      .default('⏳ 任务已创建，预计 10-30 秒...')
+      .description('任务已创建')
+      .default('⏳ 任务已创建...')
       .role('textarea', { rows: [2, 4] }),
+    msgTaskCreatedMode: Schema.union([
+      Schema.const('send').description('单独发送'),
+      Schema.const('forward').description('并入合并转发'),
+    ])
+      .description('↑ 发送模式')
+      .default('forward'),
     recallTaskCreated: Schema.boolean()
-      .description('↑ 自动撤回')
+      .description('↑ 自动撤回（仅单独发送模式有效）')
       .default(false),
     msgTaskWaiting: Schema.string()
       .description('任务查询提示')
       .default('💡 使用 moda.tasks 可查看任务状态')
       .role('textarea', { rows: [2, 4] }),
-  }).description('进度消息配置').collapse(),
+    useForwardForTasks: Schema.boolean()
+      .description('moda.tasks 使用合并转发消息')
+      .default(true),
+    useForwardForFavs: Schema.boolean()
+      .description('moda.favs 使用合并转发消息')
+      .default(true),
+    useForwardForInfo: Schema.boolean()
+      .description('moda.info 使用合并转发消息')
+      .default(true),
+  }).description('进度消息配置'),
 
   Schema.object({
     enableLogs: Schema.boolean()

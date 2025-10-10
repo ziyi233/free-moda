@@ -1,6 +1,78 @@
-import type { Context } from 'koishi'
+import type { Context, Session } from 'koishi'
 import type { Config } from './config'
 import type { ModaTask } from './types'
+
+// 消息收集器类 - 用于收集合并转发消息
+export class MessageCollector {
+  private messages: Array<{ content: string, mode: 'send' | 'forward' }> = []
+  private sentMsgIds: string[] = []
+  
+  constructor(
+    private session: Session,
+    private config: Config,
+    private logger: any
+  ) {}
+  
+  // 添加消息
+  async add(content: string, mode: 'send' | 'forward', shouldRecall: boolean) {
+    if (mode === 'send') {
+      // 单独发送模式 - 立即发送
+      const msgIds = await this.session.send(content)
+      if (shouldRecall) {
+        this.sentMsgIds.push(...msgIds)
+      }
+    } else {
+      // 合并转发模式 - 收集消息
+      this.messages.push({ content, mode })
+    }
+  }
+  
+  // 发送收集的合并转发消息
+  async sendForward() {
+    if (this.messages.length === 0) return
+    
+    try {
+      // 构建合并转发消息节点
+      const forwardNodes = `<message forward>${this.messages.map((msg) => 
+        `<message><author id="${this.session.selfId}" nickname="${this.session.bot.user?.name || 'Bot'}"/>${msg.content}</message>`
+      ).join('')}</message>`
+      
+      // 发送合并转发
+      await this.session.send(forwardNodes)
+      
+      this.messages = []
+    } catch (e) {
+      if (this.config.enableLogs) {
+        this.logger.warn(`发送合并转发消息失败: ${e.message}，降级为普通消息`)
+      }
+      // 失败时降级为普通消息
+      for (const msg of this.messages) {
+        await this.session.send(msg.content)
+      }
+      this.messages = []
+    }
+  }
+  
+  // 撤回之前发送的消息
+  async recallAll() {
+    for (const msgId of this.sentMsgIds) {
+      try {
+        await this.session.bot.deleteMessage(this.session.channelId, msgId)
+      } catch (e) {
+        if (this.config.enableLogs) {
+          this.logger.warn(`撤回消息失败: ${e.message}`)
+        }
+      }
+    }
+    this.sentMsgIds = []
+  }
+  
+  // 完成并清理（发送合并转发消息，撤回需要撤回的消息）
+  async finish() {
+    await this.sendForward()
+    await this.recallAll()
+  }
+}
 
 export function createUtils(ctx: Context, config: Config, logger: any) {
   // 消息模板变量替换
@@ -73,10 +145,16 @@ export function createUtils(ctx: Context, config: Config, logger: any) {
     return formatMessage(template, vars)
   }
 
+  // 创建消息收集器
+  function createMessageCollector(session: Session) {
+    return new MessageCollector(session, config, logger)
+  }
+
   return {
     formatMessage,
     sendWithRecall,
     formatTime,
     formatTask,
+    createMessageCollector,
   }
 }

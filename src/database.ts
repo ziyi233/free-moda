@@ -56,13 +56,14 @@ export function createDatabase(ctx: Context, logger: any) {
   }
 
   // 获取用户的所有任务
-  async function getUserTasks(userId: string, limit = 10): Promise<ModaTask[]> {
+  async function getUserTasks(userId: string, limit = 10, offset = 0): Promise<ModaTask[]> {
     // 先获取用户的任务ID列表
     const userTasks = await ctx.database
       .select('moda_user_tasks')
       .where({ userId })
       .orderBy('createdAt', 'desc')
       .limit(limit)
+      .offset(offset)
       .execute()
     
     if (userTasks.length === 0) return []
@@ -99,13 +100,14 @@ export function createDatabase(ctx: Context, logger: any) {
   }
 
   // 获取用户的收藏
-  async function getUserFavorites(userId: string, limit = 20): Promise<ModaTask[]> {
+  async function getUserFavorites(userId: string, limit = 20, offset = 0): Promise<ModaTask[]> {
     // 先获取收藏的任务ID列表
     const favorites = await ctx.database
       .select('moda_favorites')
       .where({ userId })
       .orderBy('favoritedAt', 'desc')
       .limit(limit)
+      .offset(offset)
       .execute()
     
     if (favorites.length === 0) return []
