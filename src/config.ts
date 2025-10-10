@@ -19,6 +19,12 @@ export interface Config {
   enableAI: boolean
   aiModel?: string
   aiPromptTemplate?: string
+  resetAiPromptTemplate?: any
+  // ChatLuna 工具注册
+  registerSimpleTool: boolean
+  registerAdvancedTool: boolean
+  chatLunaToolDescription: string
+  chatLunaAdvancedToolDescription: string
   // 分页配置
   tasksPerPage: number
   favsPerPage: number
@@ -106,31 +112,24 @@ export const Config: Schema<Config> = Schema.intersect([
       triggerWords: Schema.string().description('激发词（AI 生成时会自动添加到 prompt 中）').default(undefined),
     }))
       .role('table')
-      .description('生成模型列表')
+      .description('生成模型列表 https://forum.koishi.xyz/t/topic/11767/5')
       .default([
-        { name: 'Qwen/Qwen-Image', alias: 'qwen', description: '通用基础模型', register: true, defaultSize: undefined, triggerWords: undefined },
-        { name: 'merjic/majicbeauty-qwen1', alias: 'mj', description: '清冷风美人', triggerWords: 'mj', register: true, defaultSize: undefined },
-        { name: 'violetzzzz/void_0-lowLR', alias: 'void', description: 'void_0风格二次元', triggerWords: 'void 0 style', register: true, defaultSize: undefined },
-        { name: 'dominik0420/august_film_2', alias: 'film', description: '电影风格增强', register: true, defaultSize: undefined, triggerWords: undefined },
-        { name: 'xmwd2009/qwen_image_xmwd_black_pantyhose_feet_lora', alias: 'hs', description: '黑丝特化', triggerWords: 'close-up of pantyhose feet', register: true, defaultSize: undefined },
-        { name: 'firefly123123/firefly', alias: 'firefly', description: '崩坏星穹铁道角色流萤', triggerWords: 'liuying', register: true, defaultSize: undefined },
-        { name: 'whiteside123/qwenmsw2', alias: 'msw', description: '米山舞画风二次元', triggerWords: 'art by msw', register: true, defaultSize: undefined },
-        { name: 'windsing/nahida_Qwen_1', alias: 'nxd', description: '原神角色纳西妲', triggerWords: 'nahida', register: true, defaultSize: undefined },
-        { name: 'zhouwenbin1994/zhigengniao', alias: 'zgn', description: '崩坏星穹铁道角色知更鸟cos', triggerWords: 'zhigengniao', register: true, defaultSize: undefined },
-        { name: 'skyrimpasser/Evernight_Honkai_Star_Rail_character_lora', alias: 'cyy', description: '崩坏星穹铁道角色长夜月（三月七黑化）', triggerWords: 'changyeyue', register: true, defaultSize: undefined },
-        { name: 'Liudef/XB_PONY_MC_KTXY_MAX', alias: 'ktxy', description: '鸣潮角色卡提希娅', triggerWords: 'KTXY', register: true, defaultSize: undefined },
-        { name: 'nikoovo/mygo_anime_lora_testv1', alias: 'mygo', description: 'mygo角色', triggerWords: 'mygo_fanju', register: true, defaultSize: undefined },
-        { name: 'xmwd2009/qwen_image_xmwd_white_pantyhose_feet_lora', alias: 'bs', description: '白色丝袜特化', triggerWords: 'close-up of pantyhose feet', register: true, defaultSize: undefined },
-        { name: 'xmwd2009/qwen_image_xmwd_nude_pantyhose_feet_lora', alias: 'rs', description: '肉色丝袜特化', triggerWords: 'close-up of pantyhose feet', register: true, defaultSize: undefined },
-        { name: 'Asense/SDLX-shenle', alias: 'sl', description: '阴阳师角色神乐', triggerWords: 'shenle', register: true, defaultSize: undefined },
-        { name: 'Zyw3040622524/kafuka2', alias: 'kfk', description: '崩坏星穹铁道角色卡夫卡', triggerWords: 'kafuka', register: true, defaultSize: undefined },
-        { name: 'a7636378/ruan_mei.v4.5', alias: 'rm', description: '崩坏星穹铁道角色阮梅', triggerWords: 'ruan_mei_HKSR', register: false, defaultSize: undefined },
-        { name: 'chsengni/lulu_lora_v5', alias: 'll', description: '卡通虚拟角色水豚噜噜', triggerWords: 'lulu', register: true, defaultSize: undefined },
-        { name: 'xrundamlxg/nailong', alias: 'nl', description: '卡通虚拟角色奶龙（黄色）', triggerWords: '奶龙', register: true, defaultSize: undefined },
-        { name: 'PAseer/QwenSmolderLOL', alias: 'smd', description: '英雄联盟角色斯莫德', triggerWords: '哈基龙_smolder', register: true, defaultSize: undefined },
-        { name: 'yzh100200/fulilian', alias: 'fll', description: '芙莉莲角色', triggerWords: 'fulilian', register: true, defaultSize: undefined },
-        { name: 'TimelineX/feibi', alias: 'fb', description: '鸣潮角色菲比', triggerWords: 'feibi', register: true, defaultSize: undefined },
-        { name: 'aojiepp/huahuo-D2', alias: 'hh', description: '崩坏星穹铁道角色花火/Sparkle真人cos', register: true, defaultSize: undefined, triggerWords: undefined },
+        {
+          "name": "Qwen/Qwen-Image",
+          "alias": "qwen",
+          "description": "通用基础模型",
+          "triggerWords": undefined,
+          "register": true,
+          "defaultSize": undefined
+        },
+        {
+          "name": "复制Koishi论坛的模型列表",
+          "alias": "复制Koishi论坛的模型列表",
+          "description": "复制Koishi论坛的模型列表",
+          "triggerWords": "复制Koishi论坛的模型列表",
+          "register": false,
+          "defaultSize": undefined
+        }
       ]),
     generateMaxRetries: Schema.number()
       .description('最大重试次数')
@@ -183,8 +182,17 @@ Output Format (must be JSON):
 {
 "prompt": "Optimized detailed prompt (in English)",
 "model": "Chosen model alias",
+"size": "Image dimensions (optional, only if user specifies orientation/ratio)",
 "reason": "Brief reason for choosing this model (in Chinese)"
 }
+
+Size parameter (optional):
+- Only include if user explicitly requests landscape/horizontal, portrait/vertical, or specific aspect ratio
+- Square: "1024x1024" (default, omit this)
+- Landscape: "1664x768", "1536x864", or "1280x960"
+- Portrait: "768x1664", "864x1536", or "960x1280"
+- Maximum: 1664x1664 (never exceed)
+- If user doesn't specify, omit the "size" field entirely
 
 Model selection:
 Choose the most suitable model from the following list:
@@ -212,6 +220,49 @@ Fashion photo of four young models showing phone lanyards. Diverse poses: two fa
 
 Dynamic lion stone sculpture mid-pounce with front legs airborne and hind legs pushing off. Smooth lines and defined muscles show power. Faded ancient courtyard background with trees and stone steps. Weathered surface gives antique look. Documentary photography style with fine details.`),
   }).description('AI 功能'),
+
+  Schema.object({
+    registerSimpleTool: Schema.boolean()
+      .description('注册简单工具（image_generate）- AI 自动选择模型')
+      .default(false),
+    chatLunaToolDescription: Schema.string()
+      .role('textarea', { rows: [2, 6] })
+      .description('简单工具说明')
+      .default('Generate AI images automatically. Provide a natural language description (in any language) of the image you want, and the tool will automatically optimize the prompt, select the best model, and generate the image. This is the easiest way to create images - just describe what you want!'),
+    registerAdvancedTool: Schema.boolean()
+      .description('注册高级工具（image_generate_advanced）- AI 手动选择模型')
+      .default(false),
+    chatLunaAdvancedToolDescription: Schema.string()
+      .role('textarea', { rows: [3, 10] })
+      .description('高级工具说明 - 支持变量: {modelList}')
+      .default(`Generate AI images with full model control. 
+
+**Required Parameters:**
+- prompt: Detailed English description of the image. If the model requires trigger words, MUST include them in the prompt.
+- model_alias: The alias of the model to use (e.g., "qwen", "mj", "void"). Choose from the list below based on the user's requirements.
+
+**Optional Parameters:**
+- size: Image dimensions in format "WIDTHxHEIGHT". Use this to control aspect ratio based on user requirements:
+  * Square: "1024x1024" (default for most models)
+  * Landscape/Horizontal: "1664x768", "1536x864", "1280x960"
+  * Portrait/Vertical: "768x1664", "864x1536", "960x1280"
+  * Maximum: 1664x1664 (do not exceed this limit)
+  * Only specify if user explicitly requests a specific orientation or ratio, otherwise omit to use model default
+
+**Available Models:**
+{modelList}
+
+**How to choose:**
+1. Analyze the user's description and desired style
+2. Select the model whose description best matches the requirements
+3. If the model has trigger words, include them at the beginning of your prompt
+4. Use the model's alias in the model_alias parameter
+
+**Example:**
+If user wants "a beautiful anime girl", and you choose the "void" model:
+- prompt: "void 0 style, a beautiful anime girl with long hair, detailed face"
+- model_alias: "void"`),
+  }).description('ChatLuna 工具注册'),
 
   Schema.object({
     tasksPerPage: Schema.number()

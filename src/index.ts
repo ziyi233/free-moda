@@ -10,6 +10,7 @@ import './types'  // 导入类型声明（扩展 Tables）
 import { createUtils } from './utils'
 import { createAPI } from './api'
 import { createDatabase } from './database'
+import * as chatLunaTool from './chatluna-tool'
 
 export const name = 'free-moda'
 export const inject = {
@@ -26,6 +27,11 @@ export function apply(ctx: Context, config: Config) {
   const utils = createUtils(ctx, config, logger)
   const api = createAPI(ctx, config, logger)
   const db = createDatabase(ctx, logger)
+  
+  // 注册 ChatLuna 工具
+  if (config.registerSimpleTool || config.registerAdvancedTool) {
+    chatLunaTool.apply(ctx, config, api, db)
+  }
   
   // 扩展数据库表
   // 任务表
@@ -577,7 +583,7 @@ export function apply(ctx: Context, config: Config) {
           if (!jsonMatch) return '❌ AI 响应格式错误'
           
           const result = JSON.parse(jsonMatch[0])
-          const { prompt, model: selectedModelAlias, reason } = result
+          const { prompt, model: selectedModelAlias, size: aiSize, reason } = result
           
           const selectedModel = config.generateModels.find(m => m.alias === selectedModelAlias)
           if (!selectedModel) return `❌ AI 选择的模型 "${selectedModelAlias}" 不存在`
@@ -589,7 +595,8 @@ export function apply(ctx: Context, config: Config) {
           })
           toRecall = await sendWithRecall(session, aiResultMsg, config.recallAiResult, toRecall)
           
-          const size = selectedModel.defaultSize || config.defaultSize
+          // 优先使用 AI 指定的 size，其次是模型默认，最后是全局默认
+          const size = aiSize || selectedModel.defaultSize || config.defaultSize
           const negPrompt = config.enableNegativePrompt ? config.negativePrompt : undefined
           const { taskId, apiKey, requestId } = await api.createTask({
             imageUrl: '',
