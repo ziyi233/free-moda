@@ -174,10 +174,11 @@ export function apply(ctx: Context, config: Config) {
           })
           await collector.add(startMsg, config.msgEditStartMode, config.recallEditStart)
           
-          const { taskId, apiKey, requestId } = await api.createTask({
+          const { taskId, apiKey, requestId, finalPrompt, finalNegativePrompt } = await api.createTask({
             imageUrl,
             prompt,
             model: model.name,
+            modelConfig: { triggerWords: model.triggerWords, negativePrompt: model.negativePrompt },
             size,
           })
           
@@ -186,7 +187,8 @@ export function apply(ctx: Context, config: Config) {
             apiKey,
             type: 'edit',
             model: model.name,
-            prompt,
+            prompt: finalPrompt,
+            negativePrompt: finalNegativePrompt,
             size,
             inputImageUrl: imageUrl,
             requestId,
@@ -239,13 +241,12 @@ export function apply(ctx: Context, config: Config) {
           })
           await collector.add(startMsg, config.msgGenerateStartMode, config.recallGenerateStart)
           
-          const negPrompt = config.enableNegativePrompt ? config.negativePrompt : undefined
-          const { taskId, apiKey, requestId } = await api.createTask({
+          const { taskId, apiKey, requestId, finalPrompt, finalNegativePrompt } = await api.createTask({
             imageUrl: '',
             prompt,
             model: model.name,
+            modelConfig: { triggerWords: model.triggerWords, negativePrompt: model.negativePrompt },
             size,
-            negativePrompt: negPrompt,
           })
           
           const task = await db.createTask({
@@ -253,8 +254,8 @@ export function apply(ctx: Context, config: Config) {
             apiKey,
             type: 'generate',
             model: model.name,
-            prompt,
-            negativePrompt: negPrompt,
+            prompt: finalPrompt,
+            negativePrompt: finalNegativePrompt,
             size,
             requestId,
           })
@@ -454,6 +455,10 @@ export function apply(ctx: Context, config: Config) {
       try {
         const collector = createMessageCollector(session)
         
+        // 找到原始模型配置
+        const modelList = originalTask.type === 'edit' ? config.editModels : config.generateModels
+        const modelConfig = modelList.find(m => m.name === originalTask.model)
+        
         // 开始消息
         const startMsg = formatMessage(
           originalTask.type === 'edit' ? config.msgEditStart : config.msgGenerateStart,
@@ -471,6 +476,7 @@ export function apply(ctx: Context, config: Config) {
           imageUrl: originalTask.inputImageUrl || '',
           prompt: originalTask.prompt,
           model: originalTask.model,
+          modelConfig: modelConfig ? { triggerWords: modelConfig.triggerWords, negativePrompt: modelConfig.negativePrompt } : undefined,
         }
         
         // 只添加非空且非0的参数
@@ -484,15 +490,15 @@ export function apply(ctx: Context, config: Config) {
         if (originalTask.steps && originalTask.steps > 0) requestParams.steps = originalTask.steps
         if (originalTask.guidance && originalTask.guidance > 0) requestParams.guidance = originalTask.guidance
         
-        const { taskId, apiKey, requestId } = await api.createTask(requestParams)
+        const { taskId, apiKey, requestId, finalPrompt, finalNegativePrompt } = await api.createTask(requestParams)
         
         const task = await db.createTask({
           taskId,
           apiKey,
           type: originalTask.type,
           model: originalTask.model,
-          prompt: originalTask.prompt,
-          negativePrompt: originalTask.negativePrompt,
+          prompt: finalPrompt,
+          negativePrompt: finalNegativePrompt,
           size: originalTask.size,
           seed: useSeed,
           steps: originalTask.steps,
@@ -673,13 +679,12 @@ export function apply(ctx: Context, config: Config) {
           
           // 优先使用 AI 指定的 size，其次是模型默认，最后是全局默认
           const size = aiSize || selectedModel.defaultSize || config.defaultSize
-          const negPrompt = config.enableNegativePrompt ? config.negativePrompt : undefined
-          const { taskId, apiKey, requestId } = await api.createTask({
+          const { taskId, apiKey, requestId, finalPrompt, finalNegativePrompt } = await api.createTask({
             imageUrl: '',
             prompt,
             model: selectedModel.name,
+            modelConfig: { triggerWords: selectedModel.triggerWords, negativePrompt: selectedModel.negativePrompt },
             size,
-            negativePrompt: negPrompt,
           })
           
           const task = await db.createTask({
@@ -687,8 +692,8 @@ export function apply(ctx: Context, config: Config) {
             apiKey,
             type: 'generate',
             model: selectedModel.name,
-            prompt,
-            negativePrompt: negPrompt,
+            prompt: finalPrompt,
+            negativePrompt: finalNegativePrompt,
             size,
             requestId,
           })

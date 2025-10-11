@@ -4,7 +4,8 @@ export interface ModelConfig {
   description?: string
   register?: boolean
   defaultSize?: string
-  triggerWords?: string    // 必需的激发词（AI 生成时会自动添加到 prompt 中）
+  triggerWords?: string       // 激发词（自动添加到 prompt 开头）
+  negativePrompt?: string     // 模型特定的负面提示词（与全局负面词合并）
 }
 
 // 任务表（纯粹的任务记录）

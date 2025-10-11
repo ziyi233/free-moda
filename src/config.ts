@@ -81,11 +81,13 @@ export const Config: Schema<Config> = Schema.intersect([
       description: Schema.string().description('描述'),
       register: Schema.boolean().description('注册指令').default(true),
       defaultSize: Schema.string().description('默认分辨率').default(undefined),
+      triggerWords: Schema.string().description('激发词（自动添加到 prompt 开头）').default(undefined),
+      negativePrompt: Schema.string().description('负面提示词（与全局负面词合并）').default(undefined),
     }))
       .role('table')
       .description('编辑模型列表')
       .default([
-        { name: 'Qwen/Qwen-Image-Edit', alias: 'edit', description: '通用图片编辑模型', register: true, defaultSize: undefined },
+        { name: 'Qwen/Qwen-Image-Edit', alias: 'edit', description: '通用图片编辑模型', register: true, defaultSize: undefined, triggerWords: undefined, negativePrompt: undefined },
       ]),
     editMaxRetries: Schema.number()
       .description('最大重试次数（编辑较慢，建议 120+）')
@@ -121,7 +123,8 @@ export const Config: Schema<Config> = Schema.intersect([
       description: Schema.string().description('描述'),
       register: Schema.boolean().description('注册指令').default(true),
       defaultSize: Schema.string().description('默认分辨率').default(undefined),
-      triggerWords: Schema.string().description('激发词（AI 生成时会自动添加到 prompt 中）').default(undefined),
+      triggerWords: Schema.string().description('激发词（自动添加到 prompt 开头）').default(undefined),
+      negativePrompt: Schema.string().description('负面提示词（与全局负面词合并）').default(undefined),
     }))
       .role('table')
       .description('生成模型列表 https://forum.koishi.xyz/t/topic/11767/5')
@@ -131,6 +134,7 @@ export const Config: Schema<Config> = Schema.intersect([
           "alias": "qwen",
           "description": "通用基础模型",
           "triggerWords": undefined,
+          "negativePrompt": undefined,
           "register": true,
           "defaultSize": undefined
         },
@@ -139,6 +143,7 @@ export const Config: Schema<Config> = Schema.intersect([
           "alias": "复制Koishi论坛的模型列表",
           "description": "复制Koishi论坛的模型列表",
           "triggerWords": "复制Koishi论坛的模型列表",
+          "negativePrompt": undefined,
           "register": false,
           "defaultSize": undefined
         }
@@ -153,10 +158,10 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('默认分辨率（格式: 1328x1328）')
       .default('1328x1328'),
     enableNegativePrompt: Schema.boolean()
-      .description('启用负向提示词')
+      .description('启用全局负面提示词（模型特定负面词始终生效）')
       .default(false),
     negativePrompt: Schema.string()
-      .description('负向提示词（最大 2000 字符）')
+      .description('全局负面提示词（最大 2000 字符，与模型特定负面词合并）')
       .role('textarea', { rows: [3, 6] })
       .default('lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry'),
   }).description('图片生成'),

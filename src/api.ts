@@ -19,16 +19,56 @@ export function createAPI(ctx: Context, config: Config, logger: any) {
     imageUrl: string
     prompt: string
     model: string
+    modelConfig?: { triggerWords?: string, negativePrompt?: string }  // 模型配置
     size?: string
     negativePrompt?: string
     seed?: number
     steps?: number
     guidance?: number
-  }): Promise<{ taskId: string, apiKey: string, requestId?: string }> {
-    const { imageUrl, prompt, model, size, negativePrompt, seed, steps, guidance } = params
+  }): Promise<{ taskId: string, apiKey: string, requestId?: string, finalPrompt: string, finalNegativePrompt?: string }> {
+    let { imageUrl, prompt, model, modelConfig, size, negativePrompt, seed, steps, guidance } = params
+    
+    // 1. 处理激发词 - 自动添加到 prompt 开头
+    if (modelConfig?.triggerWords) {
+      const triggerWords = modelConfig.triggerWords.trim()
+      // 检查是否已包含激发词（不区分大小写）
+      if (!prompt.toLowerCase().includes(triggerWords.toLowerCase())) {
+        prompt = `${triggerWords}, ${prompt}`
+        if (config.enableLogs) {
+          logger.info(`✨ 自动添加激发词: ${triggerWords}`)
+        }
+      }
+    }
+    
+    // 2. 处理负面提示词 - 合并全局和模型特定的负面词
+    const negativePromptParts: string[] = []
+    
+    // 添加全局负面词（受开关控制）
+    if (config.enableNegativePrompt && config.negativePrompt) {
+      negativePromptParts.push(config.negativePrompt.trim())
+    }
+    
+    // 添加模型特定负面词（始终生效，不受全局开关控制）
+    if (modelConfig?.negativePrompt) {
+      negativePromptParts.push(modelConfig.negativePrompt.trim())
+    }
+    
+    // 如果有传入的负面词参数，也加入（用于 redraw 等场景）
+    if (negativePrompt) {
+      negativePromptParts.push(negativePrompt.trim())
+    }
+    
+    // 合并并去重
+    const finalNegativePrompt = negativePromptParts.length > 0 
+      ? [...new Set(negativePromptParts.join(', ').split(',').map(s => s.trim()))].join(', ')
+      : undefined
     
     if (config.enableLogs) {
-      logger.info(`创建任务 - 模型: ${model}, 提示词: ${prompt}`)
+      logger.info(`创建任务 - 模型: ${model}`)
+      logger.info(`📝 最终提示词: ${prompt}`)
+      if (finalNegativePrompt) {
+        logger.info(`🚫 负面提示词: ${finalNegativePrompt}`)
+      }
     }
     
     // 尝试所有可用的 API Key
@@ -41,7 +81,7 @@ export function createAPI(ctx: Context, config: Config, logger: any) {
       try {
         const requestBody: any = { model, prompt, image_url: imageUrl }
         if (size) requestBody.size = size
-        if (negativePrompt) requestBody.negative_prompt = negativePrompt
+        if (finalNegativePrompt) requestBody.negative_prompt = finalNegativePrompt
         if (seed !== undefined) requestBody.seed = seed
         if (steps) requestBody.steps = steps
         if (guidance) requestBody.guidance = guidance
@@ -66,7 +106,9 @@ export function createAPI(ctx: Context, config: Config, logger: any) {
         return { 
           taskId: response.task_id, 
           apiKey,
-          requestId: response.request_id 
+          requestId: response.request_id,
+          finalPrompt: prompt,
+          finalNegativePrompt
         }
       } catch (error) {
         lastError = error
