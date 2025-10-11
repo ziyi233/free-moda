@@ -64,6 +64,9 @@ export interface Config {
   useForwardForTasks: boolean
   useForwardForFavs: boolean
   useForwardForInfo: boolean
+  enableApiServer: boolean
+  apiBaseUrl: string
+  apiServerInstructions: string
   enableLogs: boolean
 }
 
@@ -437,8 +440,22 @@ If user wants "a beautiful anime girl", and you choose the "void" model:
   }).description('进度消息配置'),
 
   Schema.object({
+    enableApiServer: Schema.boolean()
+      .description('启用 HTTP API 服务')
+      .default(true),
+    apiBaseUrl: Schema.string()
+      .description('API 基础 URL（留空则自动使用 Koishi 的 selfUrl 配置）')
+      .default('0.0.0.0'),
+    apiServerInstructions: Schema.string()
+      .role('textarea', { rows: [8, 12] })
+      .description('API 使用说明（复制给 AI 使用，{baseUrl} 会自动替换为实际地址）')
+      .default(`直接填进你chatluna预设里
+draw_url:
+绘制你的形象（使用特定模型）：http://127.0.0.1:5140/moda/generate?model=模型别名&prompt=提示词
+绘制其他图片（AI 自动选模型）：http://127.0.0.1:5140/moda/ai?prompt=中文描述
+`),
     enableLogs: Schema.boolean()
       .description('启用控制台日志')
       .default(true),
-  }).description('调试选项'),
+  }).description('高级选项'),
 ])

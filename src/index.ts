@@ -10,6 +10,7 @@ import './types'  // 导入类型声明（扩展 Tables）
 import { createUtils } from './utils'
 import { createAPI } from './api'
 import { createDatabase } from './database'
+import { setupApiServer } from './api-server'
 import * as chatLunaTool from './chatluna-tool'
 
 export const name = 'free-moda'
@@ -27,6 +28,9 @@ export function apply(ctx: Context, config: Config) {
   const utils = createUtils(ctx, config, logger)
   const api = createAPI(ctx, config, logger)
   const db = createDatabase(ctx, logger)
+  
+  // 启动 HTTP API 服务器
+  setupApiServer(ctx, config, api, db, logger)
   
   // 注册 ChatLuna 工具
   if (config.registerSimpleTool || config.registerAdvancedTool) {
