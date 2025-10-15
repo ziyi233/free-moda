@@ -168,7 +168,8 @@ export function apply(ctx: Context, config: Config) {
             const detectedSize = await getImageSize(imageUrl)
             if (detectedSize) size = calculateScaledSize(detectedSize)
           }
-          
+          const steps = config.defaultsteps
+          const guidance = config.defaultguidance
           const collector = createMessageCollector(session)
           
           // 编辑开始
@@ -184,6 +185,8 @@ export function apply(ctx: Context, config: Config) {
             model: model.name,
             modelConfig: { triggerWords: model.triggerWords, negativePrompt: model.negativePrompt },
             size,
+            steps,
+            guidance,
           })
           
           const task = await db.createTask({
@@ -234,7 +237,8 @@ export function apply(ctx: Context, config: Config) {
         if (!prompt) return '请提供图片描述'
         
         const size = options?.size || model.defaultSize || config.defaultSize
-        
+        const steps = config.defaultsteps
+        const guidance = config.defaultguidance
         try {
           const collector = createMessageCollector(session)
           
@@ -251,6 +255,8 @@ export function apply(ctx: Context, config: Config) {
             model: model.name,
             modelConfig: { triggerWords: model.triggerWords, negativePrompt: model.negativePrompt },
             size,
+            steps,
+            guidance,
           })
           
           const task = await db.createTask({
@@ -262,6 +268,8 @@ export function apply(ctx: Context, config: Config) {
             negativePrompt: finalNegativePrompt,
             size,
             requestId,
+            steps,
+            guidance,
           })
           await db.linkUserTask(session.userId, task.id)
           
@@ -683,12 +691,16 @@ export function apply(ctx: Context, config: Config) {
           
           // 优先使用 AI 指定的 size，其次是模型默认，最后是全局默认
           const size = aiSize || selectedModel.defaultSize || config.defaultSize
+          const steps = config.defaultsteps
+          const guidance = config.defaultguidance        
           const { taskId, apiKey, requestId, finalPrompt, finalNegativePrompt } = await api.createTask({
             imageUrl: '',
             prompt,
             model: selectedModel.name,
             modelConfig: { triggerWords: selectedModel.triggerWords, negativePrompt: selectedModel.negativePrompt },
             size,
+            steps,
+            guidance,
           })
           
           const task = await db.createTask({

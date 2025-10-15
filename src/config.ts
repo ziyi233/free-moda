@@ -14,6 +14,8 @@ export interface Config {
   generateMaxRetries: number
   generateRetryInterval: number
   defaultSize: string
+  defaultsteps: number
+  defaultguidance: number
   enableNegativePrompt: boolean
   negativePrompt: string
   enableAI: boolean
@@ -160,6 +162,12 @@ export const Config: Schema<Config> = Schema.intersect([
     defaultSize: Schema.string()
       .description('默认分辨率（格式: 1328x1328）')
       .default('1328x1328'),
+    defaultsteps: Schema.number()
+      .description('默认步数')
+      .default(50),
+    defaultguidance: Schema.number()
+      .description('默认引导系数')
+      .default(3.5),
     enableNegativePrompt: Schema.boolean()
       .description('启用全局负面提示词（模型特定负面词始终生效）')
       .default(false),

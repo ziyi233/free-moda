@@ -4,6 +4,8 @@ export interface ModelConfig {
   description?: string
   register?: boolean
   defaultSize?: string
+  defaultsteps?: number
+  defaultguidance?: number
   triggerWords?: string       // 激发词（自动添加到 prompt 开头）
   negativePrompt?: string     // 模型特定的负面提示词（与全局负面词合并）
 }
