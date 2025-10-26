@@ -79,12 +79,21 @@ export function createAPI(ctx: Context, config: Config, logger: any) {
       const apiKey = getNextApiKey()
       
       try {
-        const requestBody: any = { model, prompt, image_url: imageUrl }
+        const requestBody: any = { model, prompt }
+        // 图生图：有实际图片 URL 时添加 image_url
+        // 文生图：不添加 image_url 参数（避免空字符串触发 429）
+        if (imageUrl && imageUrl.trim() !== '') {
+          requestBody.image_url = imageUrl
+        }
         if (size) requestBody.size = size
         if (finalNegativePrompt) requestBody.negative_prompt = finalNegativePrompt
         if (seed !== undefined) requestBody.seed = seed
         if (steps) requestBody.steps = steps
         if (guidance) requestBody.guidance = guidance
+        
+        if (config.enableLogs) {
+          logger.info(`📤 请求体: ${JSON.stringify(requestBody)}`)
+        }
         
         const response = await ctx.http.post(
           `${baseUrl}v1/images/generations`,
@@ -136,13 +145,28 @@ export function createAPI(ctx: Context, config: Config, logger: any) {
 
   // 查询任务状态
   async function getTaskStatus(taskId: string, apiKey: string) {
-    return await ctx.http.get(`${baseUrl}v1/tasks/${taskId}`, {
-      headers: { 
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'X-ModelScope-Task-Type': 'image_generation' 
+    try {
+      const result = await ctx.http.get(`${baseUrl}v1/tasks/${taskId}`, {
+        headers: { 
+          'Authorization': `Bearer ${apiKey}`,
+          'X-ModelScope-Task-Type': 'image_generation' 
+        }
+      })
+      
+      if (config.enableLogs) {
+        logger.info(`查询任务状态: ${taskId}`)
+        logger.info(`状态响应: ${JSON.stringify(result)}`)
       }
-    })
+      
+      return result
+    } catch (error) {
+      if (config.enableLogs) {
+        logger.error(`查询任务状态失败: ${taskId}`)
+        logger.error(`错误信息: ${error.message}`)
+        logger.error(`错误详情: ${JSON.stringify(error)}`)
+      }
+      throw error
+    }
   }
 
   // 等待任务完成
@@ -154,6 +178,11 @@ export function createAPI(ctx: Context, config: Config, logger: any) {
     if (config.enableLogs) logger.info(`开始等待任务完成: ${taskId}`)
     
     for (let i = 0; i < maxRetries; i++) {
+      // 在查询前等待，避免过于频繁的请求
+      // 第一次查询前等待较短时间（1秒），后续按配置间隔
+      const waitTime = i === 0 ? 1000 : interval
+      await new Promise(resolve => setTimeout(resolve, waitTime))
+      
       const result = await getTaskStatus(taskId, apiKey)
       
       if (result.task_status === 'SUCCEED') {
@@ -171,10 +200,22 @@ export function createAPI(ctx: Context, config: Config, logger: any) {
           outputImages: result.output_images
         }
       } else if (result.task_status === 'FAILED') {
-        throw new Error('任务失败')
+        // 提取详细错误信息
+        let errorMsg = '任务失败'
+        if (result.errors) {
+          const errCode = result.errors.code
+          const errMessage = result.errors.message
+          errorMsg = `任务失败 (${errCode}): ${errMessage}`
+          
+          // 针对常见错误码提供友好提示
+          if (errCode === 429) {
+            errorMsg += '\n💡 提示：API 请求过于频繁，请稍后再试或更换 API Key'
+          } else if (errCode === 401 || errCode === 403) {
+            errorMsg += '\n💡 提示：认证失败，请检查 API Key 是否有效'
+          }
+        }
+        throw new Error(errorMsg)
       }
-      
-      await new Promise(resolve => setTimeout(resolve, interval))
     }
     
     throw new Error('任务超时')

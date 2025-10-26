@@ -62,10 +62,13 @@ export interface Config {
   msgTaskCreatedMode: 'send' | 'forward'
   recallTaskCreated: boolean
   msgTaskWaiting: string
+  msgHelpIntro: string
+  msgHelpMode: 'send' | 'forward'
   // 列表输出模式
   useForwardForTasks: boolean
   useForwardForFavs: boolean
   useForwardForInfo: boolean
+  useForwardForHelp: boolean
   enableApiServer: boolean
   apiBaseUrl: string
   apiServerInstructions: string
@@ -436,6 +439,16 @@ If user wants "a beautiful anime girl", and you choose the "void" model:
       .description('任务查询提示')
       .default('💡 使用 moda.tasks 可查看任务状态')
       .role('textarea', { rows: [2, 4] }),
+    msgHelpIntro: Schema.string()
+      .description('帮助信息标题 - 合并转发消息的第一条\n\n可以包含插件介绍、快速开始说明等')
+      .default('🎨 ModelScope 免费画图插件\n\n🔍 你可以在这里找到你喜欢的角色：\nhttps://www.modelscope.cn/models\n\n🚀 快速开始：\n• moda.ai <中文描述>\n  AI 会自动处理提示词和参数\n\n示例：\nmoda.ai 藤田琴音看书\nmoda.ai chibi初音未来')
+      .role('textarea', { rows: [8, 20] }),
+    msgHelpMode: Schema.union([
+      Schema.const('send').description('单独发送'),
+      Schema.const('forward').description('合并转发'),
+    ])
+      .description('↑ 发送模式')
+      .default('forward'),
     useForwardForTasks: Schema.boolean()
       .description('moda.tasks 使用合并转发消息')
       .default(true),
@@ -444,6 +457,9 @@ If user wants "a beautiful anime girl", and you choose the "void" model:
       .default(true),
     useForwardForInfo: Schema.boolean()
       .description('moda.info 使用合并转发消息')
+      .default(true),
+    useForwardForHelp: Schema.boolean()
+      .description('moda 帮助信息使用合并转发消息')
       .default(true),
   }).description('进度消息配置'),
 

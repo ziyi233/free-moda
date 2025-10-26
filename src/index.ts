@@ -1,8 +1,4 @@
 import { Context, h, Schema } from 'koishi'
-import type {} from 'koishi-plugin-chatluna/services/chat'
-import type { PlatformService } from 'koishi-plugin-chatluna/llm-core/platform/service'
-import { ModelType } from 'koishi-plugin-chatluna/llm-core/platform/types'
-import { getMessageContent } from 'koishi-plugin-chatluna/utils/string'
 
 // 导入模块
 import { Config } from './config'
@@ -11,7 +7,6 @@ import { createUtils } from './utils'
 import { createAPI } from './api'
 import { createDatabase } from './database'
 import { setupApiServer } from './api-server'
-import * as chatLunaTool from './chatluna-tool'
 
 export const name = 'free-moda'
 export const inject = {
@@ -32,9 +27,14 @@ export function apply(ctx: Context, config: Config) {
   // 启动 HTTP API 服务器
   setupApiServer(ctx, config, api, db, logger)
   
-  // 注册 ChatLuna 工具
+  // 注册 ChatLuna 工具（动态导入）
   if (config.registerSimpleTool || config.registerAdvancedTool) {
-    chatLunaTool.apply(ctx, config, api, db)
+    try {
+      const chatLunaTool = require('./chatluna-tool')
+      chatLunaTool.apply(ctx, config, api, db)
+    } catch (error) {
+      logger.warn('无法加载 ChatLuna 工具模块，请确保已安装 koishi-plugin-chatluna')
+    }
   }
   
   // 扩展数据库表
@@ -145,6 +145,72 @@ export function apply(ctx: Context, config: Config) {
 
   // 注册主命令
   ctx.command('moda', 'ModelScope 图片生成和编辑')
+    .action(({ session }) => {
+      // 构建帮助信息
+      const messages: string[] = []
+      
+      // 第一条消息：标题和快速开始（从配置读取）
+      if (config.msgHelpIntro && config.msgHelpIntro.trim()) {
+        messages.push(config.msgHelpIntro)
+      }
+      
+      // 管理指令
+      let mgmtMsg = '⚙️ 管理指令'
+      mgmtMsg += '\n\n• moda.tasks [页码]'
+      mgmtMsg += '\n  查看我的任务'
+      mgmtMsg += '\n\n• moda.info <ID>'
+      mgmtMsg += '\n  查看任务详情'
+      mgmtMsg += '\n\n• moda.redraw <ID>'
+      mgmtMsg += '\n  重绘任务'
+      mgmtMsg += '\n\n• moda.fav <ID>'
+      mgmtMsg += '\n  收藏图片'
+      mgmtMsg += '\n\n• moda.unfav <ID>'
+      mgmtMsg += '\n  取消收藏'
+      mgmtMsg += '\n\n• moda.favs [页码]'
+      mgmtMsg += '\n  查看收藏'
+      mgmtMsg += '\n\n• moda.clearfav -c'
+      mgmtMsg += '\n  清空收藏'
+      messages.push(mgmtMsg)
+      
+      // 图片生成模型
+      if (config.generateModels.some(m => m.register)) {
+        let genMsg = '📸 图片生成模型'
+        config.generateModels
+          .filter(m => m.register)
+          .forEach(m => {
+            genMsg += `\n\n• moda.${m.alias}`
+            if (m.description) genMsg += `\n  ${m.description}`
+            if (m.defaultSize) genMsg += `\n  默认尺寸: ${m.defaultSize}`
+          })
+        messages.push(genMsg)
+      }
+      
+      // 图片编辑模型
+      if (config.editModels.some(m => m.register)) {
+        let editMsg = '✏️ 图片编辑模型'
+        config.editModels
+          .filter(m => m.register)
+          .forEach(m => {
+            editMsg += `\n\n• moda.${m.alias}`
+            if (m.description) editMsg += `\n  ${m.description}`
+            if (m.defaultSize) editMsg += `\n  默认尺寸: ${m.defaultSize}`
+          })
+        messages.push(editMsg)
+      }
+  
+      
+      // 根据配置决定输出方式
+      if (config.msgHelpMode === 'forward') {
+        // 使用合并转发
+        const forwardNodes = `<message forward>${messages.map((msg) => 
+          `<message><author id="${session.selfId}" nickname="${session.bot.user?.name || 'Moda Bot'}"/>${msg}</message>`
+        ).join('')}</message>`
+        return forwardNodes
+      } else {
+        // 直接发送所有消息
+        return messages.join('\n\n' + '─'.repeat(20) + '\n\n')
+      }
+    })
 
   // 注册编辑模型命令
   for (const model of config.editModels) {
@@ -670,7 +736,16 @@ export function apply(ctx: Context, config: Config) {
             .replace(/{modelList}/g, modelList)
           
           const response = await model.invoke(systemPrompt)
-          const responseText = getMessageContent(response.content)
+          // 提取消息内容
+          let responseText: string
+          if (typeof response.content === 'string') {
+            responseText = response.content
+          } else if (Array.isArray(response.content)) {
+            const textItem = response.content.find((item: any) => item.type === 'text' && item.text)
+            responseText = textItem?.text || String(response.content)
+          } else {
+            responseText = String(response.content)
+          }
           
           const jsonMatch = responseText.match(/\{[\s\S]*\}/)
           if (!jsonMatch) return '❌ AI 响应格式错误'
@@ -712,6 +787,8 @@ export function apply(ctx: Context, config: Config) {
             negativePrompt: finalNegativePrompt,
             size,
             requestId,
+            steps,
+            guidance,
           })
           await db.linkUserTask(session.userId, task.id)
           
@@ -742,9 +819,11 @@ export function apply(ctx: Context, config: Config) {
 
 // ChatLuna 模型监听
 function listenModel(ctx: Context, config: any, logger: any) {
-  const getModelNames = (service: PlatformService) => {
+  const getModelNames = (service: any) => {
     try {
-      return service.getAllModels(ModelType.llm).map((m) => Schema.const(m))
+      // 动态获取 ModelType
+      const ModelType = require('koishi-plugin-chatluna/llm-core/platform/types').ModelType
+      return service.getAllModels(ModelType.llm).map((m: string) => Schema.const(m))
     } catch {
       return []
     }
